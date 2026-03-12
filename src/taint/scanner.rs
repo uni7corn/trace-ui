@@ -100,6 +100,8 @@ pub struct ScanState {
     pub line_count: u32,
     /// 成功解析的指令行数（parse_line 返回 Some 的次数）
     pub parsed_count: u32,
+    /// 包含 mem[WRITE]/mem[READ] + abs= 的行数
+    pub mem_op_count: u32,
     /// Maps (@LINE, target) → resolved line index (may differ from original if fallback occurred).
     pub resolved_targets: FxHashMap<(u32, LineTarget), u32>,
     /// 未知助记符统计：助记符 → (首次出现行号 0-based, 出现次数)
@@ -215,6 +217,7 @@ pub fn scan_pass1_bytes_with_progress(
         deps: Vec::with_capacity(line_count_est),
         line_count: 0,
         parsed_count: 0,
+        mem_op_count: 0,
         resolved_targets: FxHashMap::default(),
         unknown_mnemonics: FxHashMap::default(),
         init_mem_loads: bitvec::prelude::BitVec::repeat(false, line_count_est),
@@ -560,6 +563,9 @@ pub fn scan_pass1_bytes_with_progress(
             t_update += t.elapsed();
         }
 
+        if line.mem_op.is_some() {
+            state.mem_op_count += 1;
+        }
         state.parsed_count += 1;
         state.line_count += 1;
     }

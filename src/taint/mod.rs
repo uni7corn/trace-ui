@@ -59,6 +59,7 @@ pub fn scan_unified(
         deps: Vec::with_capacity(line_count_est),
         line_count: 0,
         parsed_count: 0,
+        mem_op_count: 0,
         resolved_targets: FxHashMap::default(),
         unknown_mnemonics: FxHashMap::default(),
         init_mem_loads: bitvec::prelude::BitVec::repeat(false, line_count_est),
@@ -380,6 +381,7 @@ pub fn scan_unified(
 
         // ── Phase2: MemAccess 逻辑 ──
         if let Some(ref mem_op) = line.mem_op {
+            state.mem_op_count += 1;
             let rw = if mem_op.is_write {
                 MemRw::Write
             } else {

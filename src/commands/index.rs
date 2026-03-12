@@ -91,6 +91,16 @@ async fn build_index_inner(
             return Err("文件格式不正确：未检测到有效的 ARM64 trace 指令行".to_string());
         }
 
+        // 格式检查：有指令行但没有内存操作注解，说明缺少定制的 mem[WRITE]/mem[READ] + abs= 字段
+        if scan_state.parsed_count > 0 && scan_state.mem_op_count == 0 {
+            return Err(
+                "Trace 日志缺少内存访问注解（mem[WRITE]/mem[READ] 和 abs= 字段）。\n\n\
+                 trace-ui 需要定制化的 unidbg 日志格式，标准 unidbg 输出不包含这些字段。\n\
+                 请参考项目文档中的 unidbg 定制说明，启用内存读写打印后重新生成 trace 日志。"
+                    .to_string(),
+            );
+        }
+
         // 保存缓存
         cache::save_cache(&file_path, data, &phase2);
         cache::save_scan_cache(&file_path, data, &scan_state);
