@@ -25,14 +25,14 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::new())
         .setup(|app| {
-            let window = app.get_webview_window("main").unwrap();
+            let _window = app.get_webview_window("main").unwrap();
 
             #[cfg(debug_assertions)]
-            window.open_devtools();
+            _window.open_devtools();
 
             // Windows 不支持 titleBarStyle: "Overlay"，需要手动关闭原生装饰
             #[cfg(target_os = "windows")]
-            let _ = window.set_decorations(false);
+            let _ = _window.set_decorations(false);
 
             Ok(())
         })
@@ -56,6 +56,9 @@ fn main() {
             commands::slice::clear_slice,
             commands::slice::get_tainted_seqs,
             commands::slice::export_taint_results,
+            commands::cache::get_cache_dir,
+            commands::cache::set_cache_dir,
+            commands::cache::clear_all_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,4 +1,5 @@
 pub mod browse;
+pub mod cache;
 pub mod call_tree;
 pub mod def_use;
 pub mod file;

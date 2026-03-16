@@ -1,13 +1,25 @@
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
+use std::sync::RwLock;
 use sha2::{Sha256, Digest};
 use crate::state::Phase2State;
 use crate::taint::scanner::ScanState;
 
-const MAGIC: &[u8; 8] = b"TCACHE04";
+const MAGIC: &[u8; 8] = b"TCACHE01";
 const HEAD_SIZE: usize = 1024 * 1024; // 1MB
 
-fn cache_dir() -> Option<PathBuf> {
+static CACHE_DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
+
+pub fn set_cache_dir_override(path: Option<PathBuf>) {
+    *CACHE_DIR_OVERRIDE.write().unwrap() = path;
+}
+
+pub fn cache_dir() -> Option<PathBuf> {
+    if let Ok(guard) = CACHE_DIR_OVERRIDE.read() {
+        if let Some(ref p) = *guard {
+            return Some(p.clone());
+        }
+    }
     dirs::data_dir().map(|d| d.join("trace-ui").join("cache"))
 }
 
@@ -118,4 +130,39 @@ pub fn delete_cache(file_path: &str) {
             let _ = std::fs::remove_file(p);
         }
     }
+}
+
+pub fn get_cache_info() -> (String, u64) {
+    let dir = cache_dir().unwrap_or_default();
+    let path_str = dir.to_string_lossy().to_string();
+    let size = dir_size(&dir);
+    (path_str, size)
+}
+
+pub fn clear_all_cache() -> (u32, u64) {
+    let Some(dir) = cache_dir() else { return (0, 0) };
+    let mut count = 0u32;
+    let mut total_size = 0u64;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("bin") {
+                if let Ok(meta) = path.metadata() {
+                    total_size += meta.len();
+                }
+                if std::fs::remove_file(&path).is_ok() {
+                    count += 1;
+                }
+            }
+        }
+    }
+    (count, total_size)
+}
+
+fn dir_size(path: &PathBuf) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else { return 0 };
+    entries.flatten()
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum()
 }
