@@ -4,8 +4,9 @@ import { useResizableColumn } from "../hooks/useResizableColumn";
 import type { SearchMatch, SliceResult } from "../types/trace";
 import MemoryPanel from "./MemoryPanel";
 import SearchResultList from "./SearchResultList";
+import StringsPanel from "./StringsPanel";
 
-const TABS = ["Memory", "Accesses", "Taint State", "Search"] as const;
+const TABS = ["Memory", "Accesses", "Taint State", "Search", "Strings"] as const;
 type TabName = typeof TABS[number];
 
 const TAB_TO_PANEL: Record<string, string> = {
@@ -13,6 +14,7 @@ const TAB_TO_PANEL: Record<string, string> = {
   "Accesses": "accesses",
   "Taint State": "taint-state",
   "Search": "search",
+  "Strings": "strings",
 };
 
 interface Props {
@@ -142,6 +144,16 @@ export default function TabPanel({
             ) : (
               <span style={{ color: "var(--text-secondary)", fontSize: 12 }}></span>
             )}
+          </div>
+        );
+      case "Strings":
+        return (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <StringsPanel
+              sessionId={sessionId}
+              isPhase2Ready={isPhase2Ready}
+              onJumpToSeq={onJumpToSeq}
+            />
           </div>
         );
       default:

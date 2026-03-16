@@ -32,6 +32,7 @@ const PANEL_SIZES: Record<string, { width: number; height: number }> = {
   accesses: { width: 600, height: 400 },
   "taint-state": { width: 600, height: 400 },
   search: { width: 800, height: 500 },
+  strings: { width: 900, height: 450 },
 };
 
 function clampToScreen(w: number, h: number): { width: number; height: number } {
@@ -48,6 +49,7 @@ const PANEL_WINDOW_TITLES: Record<string, string> = {
   accesses: "Accesses - Trace UI",
   "taint-state": "Taint State - Trace UI",
   search: "Search - Trace UI",
+  strings: "Strings - Trace UI",
 };
 
 function App() {

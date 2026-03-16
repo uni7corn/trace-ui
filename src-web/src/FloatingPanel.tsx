@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import MemoryPanel from "./components/MemoryPanel";
 import FloatingWindowFrame from "./components/FloatingWindowFrame";
 import SearchResultList from "./components/SearchResultList";
+import StringsPanel from "./components/StringsPanel";
 import type { SearchMatch, SearchResult } from "./types/trace";
 
 const PANEL_TITLES: Record<string, string> = {
@@ -12,6 +13,7 @@ const PANEL_TITLES: Record<string, string> = {
   accesses: "Accesses",
   "taint-state": "Taint State",
   search: "Search",
+  strings: "Strings",
 };
 
 interface SyncState {
@@ -170,6 +172,14 @@ export default function FloatingPanel({ panel }: { panel: string }) {
             searchStatus={searchStatus}
             onJumpToSeq={handleJumpToSeq}
             onSearch={handleSearch}
+          />
+        );
+      case "strings":
+        return (
+          <StringsPanel
+            sessionId={syncState.sessionId}
+            isPhase2Ready={syncState.isPhase2Ready}
+            onJumpToSeq={handleJumpToSeq}
           />
         );
       default:
