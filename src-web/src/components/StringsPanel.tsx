@@ -23,8 +23,8 @@ export default function StringsPanel({ sessionId, isPhase2Ready, onJumpToSeq }: 
   const [xrefs, setXrefs] = useState<{ record: StringRecordDto; items: StringXRef[] } | null>(null);
 
   const parentRef = useRef<HTMLDivElement>(null);
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const minLenTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const minLenTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const pendingRef = useRef(0);
 
   // ── 数据加载 ──
