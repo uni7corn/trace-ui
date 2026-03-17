@@ -67,19 +67,21 @@ pub async fn search_trace(
     let max_results = request.max_results;
 
     // 预构建 call_annotations 的搜索文本: seq -> searchable_text
-    let (mmap_arc, total_lines, trace_format, call_search_texts, call_annotations) = {
+    let (mmap_arc, total_lines, trace_format, call_search_texts, call_annotations, consumed_seqs) = {
         let sessions = state.sessions.read().map_err(|e| e.to_string())?;
         let session = sessions.get(&session_id).ok_or_else(|| format!("Session {} 不存在", session_id))?;
         let texts: std::collections::HashMap<u32, String> = session.call_annotations.iter()
             .map(|(&seq, ann)| (seq, ann.searchable_text()))
             .collect();
         let ann_map = session.call_annotations.clone();
+        let consumed: std::collections::HashSet<u32> = session.consumed_seqs.iter().copied().collect();
         (
             session.mmap.clone(),
             session.line_index.as_ref().map(|li| li.total_lines()).unwrap_or(0),
             session.trace_format,
             texts,
             ann_map,
+            consumed,
         )
     };
 
@@ -97,6 +99,13 @@ pub async fn search_trace(
                 .unwrap_or(data.len());
 
             let line = &data[pos..end];
+
+            // 跳过已消费的特殊行（call func/args/ret/hexdump），避免重复计数
+            if consumed_seqs.contains(&seq) {
+                pos = end + 1;
+                seq += 1;
+                continue;
+            }
 
             let is_match = match &mode {
                 SearchMode::Text(needle) => memchr::memmem::find(line, needle).is_some(),
