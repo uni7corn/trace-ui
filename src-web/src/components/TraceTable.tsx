@@ -2542,15 +2542,13 @@ export default function TraceTable({
               borderRadius: 4,
               boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
               padding: "8px 12px",
-              maxWidth: 500,
               maxHeight: 300,
               overflow: "auto",
               zIndex: 10000,
               fontSize: 12,
               fontFamily: '"JetBrains Mono", "Fira Code", monospace',
               color: "var(--text-primary, #abb2bf)",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
+              whiteSpace: "pre",
               pointerEvents: "none",
             }}
           >
