@@ -8,6 +8,7 @@ import { emit, emitTo, listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import TitleBar from "./components/TitleBar";
 import FunctionTree from "./components/FunctionTree";
+import FunctionListPanel from "./components/FunctionListPanel";
 import TraceTable from "./components/TraceTable";
 import RegisterPanel from "./components/RegisterPanel";
 import TabPanel from "./components/TabPanel";
@@ -96,6 +97,7 @@ function App() {
 
   const [showGoto, setShowGoto] = useState(false);
   const [stringsScanningSessionId, setStringsScanningSessionId] = useState<string | null>(null);
+  const [leftTab, setLeftTab] = useState<"tree" | "list">("tree");
 
   const { recentFiles, addRecent, removeRecent, clearRecent } = useRecentFiles();
   const { highlights, loadForFile, setHighlight, toggleStrikethrough, resetHighlight, toggleHidden, unhideGroup, setComment, deleteComment } = useHighlights();
@@ -939,18 +941,57 @@ function App() {
         <Panel defaultSize={20} minSize={15} panelRef={leftPanelRef}>
           <Group orientation="vertical" elementRef={leftGroupRef}>
             <Panel defaultSize={65} minSize={20}>
-              <FunctionTree
-                isPhase2Ready={isPhase2Ready}
-                onJumpToSeq={handleJumpToSeq}
-                nodeMap={callTreeNodeMap}
-                nodeCount={callTreeCount}
-                loading={callTreeLoading}
-                error={callTreeError}
-                lazyMode={callTreeLazyMode}
-                loadedNodes={callTreeLoadedNodes}
-                onLoadChildren={loadCallTreeChildren}
-                funcRename={funcRename}
-              />
+              <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+                <div style={{
+                  display: "flex",
+                  height: 26,
+                  flexShrink: 0,
+                  background: "var(--bg-secondary)",
+                  borderBottom: "1px solid var(--border-color)",
+                  fontSize: "var(--font-size-sm)",
+                  fontFamily: "var(--font-mono)",
+                }}>
+                  {(["tree", "list"] as const).map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setLeftTab(tab)}
+                      style={{
+                        flex: 1,
+                        background: leftTab === tab ? "var(--bg-primary)" : "transparent",
+                        color: leftTab === tab ? "var(--text-primary)" : "var(--text-secondary)",
+                        border: "none",
+                        borderBottom: leftTab === tab ? "2px solid var(--btn-primary)" : "2px solid transparent",
+                        cursor: "pointer",
+                        fontFamily: "var(--font-mono)",
+                        fontSize: "var(--font-size-sm)",
+                      }}
+                    >
+                      {tab === "tree" ? "调用树" : "函数列表"}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ flex: 1, overflow: "hidden" }}>
+                  {leftTab === "tree" ? (
+                    <FunctionTree
+                      isPhase2Ready={isPhase2Ready}
+                      onJumpToSeq={handleJumpToSeq}
+                      nodeMap={callTreeNodeMap}
+                      nodeCount={callTreeCount}
+                      loading={callTreeLoading}
+                      error={callTreeError}
+                      lazyMode={callTreeLazyMode}
+                      loadedNodes={callTreeLoadedNodes}
+                      onLoadChildren={loadCallTreeChildren}
+                      funcRename={funcRename}
+                    />
+                  ) : (
+                    <FunctionListPanel
+                      sessionId={activeSessionId}
+                      onJumpToSeq={handleJumpToSeq}
+                    />
+                  )}
+                </div>
+              </div>
             </Panel>
             <Separator style={{ height: 3 }} />
             <Panel defaultSize={35} minSize={15} panelRef={regPanelRef}>
