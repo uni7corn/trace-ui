@@ -30,9 +30,9 @@ const COL_ARROW = COL_PAD;          // 8
 const COL_FOLD = COL_ARROW + ARROW_COL_WIDTH; // 28
 const COL_MEMRW = COL_FOLD + 28;    // 56
 const COL_SEQ = COL_MEMRW + 30;     // 86
-const COL_ADDR = COL_SEQ + 90;      // 176
-const COL_DISASM = COL_ADDR + 90;    // 266
-const COL_COMMENT = COL_DISASM + 240; // 506 — 注释对齐列
+const DEFAULT_SEQ_WIDTH = 90;
+const DEFAULT_ADDR_WIDTH = 90;
+const COMMENT_OFFSET = 240; // disasm 开始后的注释列偏移
 
 // 箭头常量
 const DOT_X = 16;
@@ -176,6 +176,13 @@ export default function TraceTable({
   }
 
   const changesCol = useResizableColumn(Math.min(300, Math.round(window.innerWidth * 0.2)));
+  const seqCol = useResizableColumn(DEFAULT_SEQ_WIDTH, "right", 50);
+  const addrCol = useResizableColumn(DEFAULT_ADDR_WIDTH, "right", 50);
+
+  // 动态列位置
+  const COL_ADDR = COL_SEQ + seqCol.width;
+  const COL_DISASM = COL_ADDR + addrCol.width;
+  const COL_COMMENT = COL_DISASM + COMMENT_OFFSET;
 
   const {
     blLineMap, virtualTotalRows: foldVirtualTotalRows, resolveVirtualIndex: foldResolveVirtualIndex,
@@ -2325,7 +2332,7 @@ export default function TraceTable({
           background: "var(--bg-primary)",
         }}
       >
-        <TableHeader changesWidth={effectiveChangesWidth} onResizeMouseDown={changesCol.onMouseDown} />
+        <TableHeader changesWidth={effectiveChangesWidth} seqWidth={seqCol.width} addrWidth={addrCol.width} onResizeMouseDown={changesCol.onMouseDown} onSeqResizeMouseDown={seqCol.onMouseDown} onAddrResizeMouseDown={addrCol.onMouseDown} />
         <div
           style={{
             flex: 1,
@@ -2344,7 +2351,7 @@ export default function TraceTable({
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg-primary)" }}>
-      <TableHeader changesWidth={effectiveChangesWidth} onResizeMouseDown={changesCol.onMouseDown} />
+      <TableHeader changesWidth={effectiveChangesWidth} seqWidth={seqCol.width} addrWidth={addrCol.width} onResizeMouseDown={changesCol.onMouseDown} onSeqResizeMouseDown={seqCol.onMouseDown} onAddrResizeMouseDown={addrCol.onMouseDown} />
       <div
         ref={containerRef}
         tabIndex={0}
@@ -2777,7 +2784,30 @@ export default function TraceTable({
   );
 }
 
-function TableHeader({ changesWidth, onResizeMouseDown }: { changesWidth: number; onResizeMouseDown: (e: React.MouseEvent) => void }) {
+interface TableHeaderProps {
+  changesWidth: number;
+  seqWidth: number;
+  addrWidth: number;
+  onResizeMouseDown: (e: React.MouseEvent) => void;
+  onSeqResizeMouseDown: (e: React.MouseEvent) => void;
+  onAddrResizeMouseDown: (e: React.MouseEvent) => void;
+}
+
+function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      style={{
+        width: 8, cursor: "col-resize", flexShrink: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+    >
+      <div style={{ width: 1, height: "100%", background: "var(--border-color)" }} />
+    </div>
+  );
+}
+
+function TableHeader({ changesWidth, seqWidth, addrWidth, onResizeMouseDown, onSeqResizeMouseDown, onAddrResizeMouseDown }: TableHeaderProps) {
   return (
     <div
       style={{
@@ -2792,18 +2822,12 @@ function TableHeader({ changesWidth, onResizeMouseDown }: { changesWidth: number
       <span style={{ width: COL_FOLD - COL_ARROW, flexShrink: 0 }}></span>
       <span style={{ width: COL_MEMRW - COL_FOLD, flexShrink: 0 }}></span>
       <span style={{ width: COL_SEQ - COL_MEMRW, flexShrink: 0 }}></span>
-      <span style={{ width: COL_ADDR - COL_SEQ, flexShrink: 0 }}>#</span>
-      <span style={{ width: COL_DISASM - COL_ADDR, flexShrink: 0 }}>Address</span>
+      <span style={{ width: seqWidth, flexShrink: 0 }}>#</span>
+      <ResizeHandle onMouseDown={onSeqResizeMouseDown} />
+      <span style={{ width: addrWidth, flexShrink: 0 }}>Address</span>
+      <ResizeHandle onMouseDown={onAddrResizeMouseDown} />
       <span style={{ flex: 1 }}>Disassembly</span>
-      <div
-        onMouseDown={onResizeMouseDown}
-        style={{
-          width: 8, cursor: "col-resize", flexShrink: 0,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-      >
-        <div style={{ width: 1, height: "100%", background: "var(--border-color)" }} />
-      </div>
+      <ResizeHandle onMouseDown={onResizeMouseDown} />
       <span style={{ width: changesWidth, flexShrink: 0 }}>Changes</span>
       <span style={{ width: RIGHT_GUTTER, flexShrink: 0 }}></span>
     </div>

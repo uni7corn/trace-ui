@@ -1,6 +1,11 @@
 import { useState, useCallback, useRef } from "react";
 
-export function useResizableColumn(initialWidth: number) {
+/**
+ * @param initialWidth 初始宽度
+ * @param direction "left" = 向左拖增大（Changes 列），"right" = 向右拖增大（Seq/Address 列）
+ * @param minWidth 最小宽度
+ */
+export function useResizableColumn(initialWidth: number, direction: "left" | "right" = "left", minWidth = 40) {
   const [width, setWidth] = useState(initialWidth);
   const dragging = useRef(false);
   const startX = useRef(0);
@@ -13,8 +18,10 @@ export function useResizableColumn(initialWidth: number) {
     startW.current = width;
     const onMove = (ev: MouseEvent) => {
       if (!dragging.current) return;
-      const delta = startX.current - ev.clientX;
-      setWidth(Math.max(80, startW.current + delta));
+      const delta = direction === "left"
+        ? startX.current - ev.clientX
+        : ev.clientX - startX.current;
+      setWidth(Math.max(minWidth, startW.current + delta));
     };
     const onUp = () => {
       dragging.current = false;
@@ -23,7 +30,7 @@ export function useResizableColumn(initialWidth: number) {
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
-  }, [width]);
+  }, [width, direction, minWidth]);
 
   return { width, onMouseDown };
 }
