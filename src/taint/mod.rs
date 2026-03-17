@@ -1,5 +1,6 @@
 pub mod types;
 pub mod parser;
+pub mod gumtrace_parser;
 pub mod insn_class;
 pub mod def_use;
 pub mod scanner;

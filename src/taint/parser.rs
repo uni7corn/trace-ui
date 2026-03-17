@@ -17,7 +17,7 @@ fn find_disasm_with_pos(line: &[u8]) -> Option<(&str, usize)> {
 }
 
 /// 手动解析十六进制字节序列到 u64。
-fn parse_hex_u64(bytes: &[u8]) -> Option<u64> {
+pub(crate) fn parse_hex_u64(bytes: &[u8]) -> Option<u64> {
     if bytes.is_empty() {
         return None;
     }
@@ -160,7 +160,7 @@ fn parse_line_inner(raw: &str, extract_regs: bool) -> Option<ParsedLine> {
 ///
 /// 扫描 `=0x` 模式，向左提取寄存器名，向右提取十六进制值。
 /// 128-bit SIMD 值溢出 u64 时截断为 0。
-fn extract_reg_values(text: &str) -> SmallVec<[(RegId, u64); 4]> {
+pub(crate) fn extract_reg_values(text: &str) -> SmallVec<[(RegId, u64); 4]> {
     let bytes = text.as_bytes();
     let mut result = SmallVec::new();
     let mut pos = 0;
@@ -212,7 +212,7 @@ fn extract_reg_values(text: &str) -> SmallVec<[(RegId, u64); 4]> {
 /// width before register normalization, e.g., 'w' -> 4 bytes, 'x' -> 8 bytes).
 ///
 /// Also populates `out.operands`, `out.base_reg`, and `out.lane_index`.
-fn parse_operands_into(text: &str, out: &mut ParsedLine) -> Option<u8> {
+pub(crate) fn parse_operands_into(text: &str, out: &mut ParsedLine) -> Option<u8> {
     let mut first_reg_prefix: Option<u8> = None;
 
     if text.is_empty() {
@@ -348,7 +348,7 @@ fn parse_imm(s: &str) -> Option<i64> {
 ///
 /// Used for value extraction: we need the original (pre-normalization) register name
 /// to search for `regname=0xHEX` patterns in the trace line text.
-fn first_data_reg_name(operand_text: &str) -> Option<&str> {
+pub(crate) fn first_data_reg_name(operand_text: &str) -> Option<&str> {
     let first_tok = operand_text.split(',').next()?.trim();
     let first_tok = first_tok
         .trim_start_matches('{')
@@ -373,7 +373,7 @@ fn first_data_reg_name(operand_text: &str) -> Option<&str> {
 ///
 /// Ensures exact register name match (no prefix collisions like "x1" matching "x10")
 /// by checking the character before the name is not alphanumeric and "=0x" follows immediately.
-fn find_reg_value(bytes: &[u8], reg_name: &[u8], start_pos: usize) -> Option<u64> {
+pub(crate) fn find_reg_value(bytes: &[u8], reg_name: &[u8], start_pos: usize) -> Option<u64> {
     let search = &bytes[start_pos..];
     let mut pos = 0;
     while pos + reg_name.len() + 3 <= search.len() {
@@ -417,7 +417,7 @@ fn find_reg_value(bytes: &[u8], reg_name: &[u8], start_pos: usize) -> Option<u64
 /// - d → 8 bytes (double float)
 /// - q → 16 bytes (128-bit vector)
 /// - v → 16 bytes (full vector, default)
-fn determine_elem_width(mnemonic: &str, first_reg_prefix: Option<u8>) -> u8 {
+pub(crate) fn determine_elem_width(mnemonic: &str, first_reg_prefix: Option<u8>) -> u8 {
     match mnemonic {
         "ldrb" | "strb" | "ldrsb" | "ldarb" | "stlrb" | "ldurb" | "sturb" | "ldtrb" | "sttrb"
         | "ldaprb" => 1,
