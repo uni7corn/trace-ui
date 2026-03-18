@@ -404,9 +404,22 @@ export default function TitleBar({ onOpenFile, onCloseFile, onRebuildIndex, onSe
             Taint
           </button>
         ) : (
-          <MenuDropdown label="Taint" minWidth={200}>
-            <MenuItem label="Configure..." onClick={onTaintReconfigure} />
-          </MenuDropdown>
+          <button
+            onClick={onTaintAnalysis}
+            disabled={!hasSelectedSeq}
+            style={{
+              padding: "4px 10px",
+              background: hasSelectedSeq ? "var(--bg-secondary)" : "transparent",
+              color: hasSelectedSeq ? "var(--text-primary)" : "var(--text-secondary)",
+              border: "none",
+              borderRadius: 4,
+              cursor: hasSelectedSeq ? "pointer" : "default",
+              fontSize: "var(--font-size-sm)",
+              opacity: hasSelectedSeq ? 1 : 0.5,
+            }}
+          >
+            Taint
+          </button>
         )}
         <button
           onClick={canGoBack ? onGoBack : undefined}

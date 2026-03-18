@@ -518,7 +518,7 @@ function App() {
     } else {
       const count = await searchTrace(query);
       if (query.trim() && count === 0) {
-        showToast(`No results found for "${query}"`);
+        showToast(`No results found for "${query}"`, { type: "info" });
       }
     }
   }, [searchTrace, floatedPanels, showToast]);
@@ -529,7 +529,7 @@ function App() {
     try {
       await invoke("scan_strings", { sessionId: activeSessionId });
       setHasStringIndexMap(prev => new Map(prev).set(activeSessionId, true));
-      showToast("Scan Strings 完成");
+      showToast("Scan Strings completed", { type: "success" });
     } catch (e) {
       console.warn("scan_strings:", e);
     } finally {
@@ -1129,13 +1129,13 @@ function App() {
             setTaintDialogSeq(null);
             try {
               await slice.runSlice(specs, startSeq, endSeq, sourceSeq, dataOnly);
-              showToast("Taint analysis completed");
+              showToast("Taint analysis completed", { type: "success" });
               // 跳转到污点源行
               scrollAlignRef.current = "end";
               setScrollTrigger(c => c + 1);
               navigationStore.navigate(sourceSeq);
             } catch (e) {
-              showToast(`Taint analysis failed: ${e}`, 5000);
+              showToast(`Taint analysis failed: ${e}`, { duration: 5000, type: "error" });
             }
           }}
           onClose={() => setTaintDialogSeq(null)}

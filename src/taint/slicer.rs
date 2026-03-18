@@ -237,7 +237,6 @@ mod tests {
         let view = ScanView {
             deps: deps.view(),
             pair_split: pair_split.view(),
-            init_mem_loads: init_mem_loads.view(),
             line_count: state.line_count,
         };
         let start = vec![*state.reg_last_def.get(&RegId::X0).unwrap()];
@@ -266,7 +265,6 @@ mod tests {
         let view = ScanView {
             deps: deps.view(),
             pair_split: pair_split.view(),
-            init_mem_loads: init_mem_loads.view(),
             line_count: state.line_count,
         };
         let start = vec![*state.reg_last_def.get(&RegId::X0).unwrap()];
@@ -296,7 +294,6 @@ mod tests {
         let view = ScanView {
             deps: deps.view(),
             pair_split: pair_split.view(),
-            init_mem_loads: init_mem_loads.view(),
             line_count: state.line_count,
         };
         // Slice from both x0 and x1
@@ -325,7 +322,6 @@ mod tests {
         let view = ScanView {
             deps: deps.view(),
             pair_split: pair_split.view(),
-            init_mem_loads: init_mem_loads.view(),
             line_count: state.line_count,
         };
         let start = vec![0u32];
@@ -348,7 +344,6 @@ mod tests {
         let view = ScanView {
             deps: deps.view(),
             pair_split: pair_split.view(),
-            init_mem_loads: init_mem_loads.view(),
             line_count: state.line_count,
         };
         let marked = bfs_slice(&view, &[]);
@@ -374,7 +369,6 @@ mod tests {
         let view = ScanView {
             deps: deps.view(),
             pair_split: pair_split.view(),
-            init_mem_loads: init_mem_loads.view(),
             line_count: state.line_count,
         };
         let start = vec![*state.reg_last_def.get(&RegId::X0).unwrap()];
@@ -413,7 +407,6 @@ mod tests {
         let view = ScanView {
             deps: deps.view(),
             pair_split: pair_split.view(),
-            init_mem_loads: init_mem_loads.view(),
             line_count: state.line_count,
         };
         let start = vec![*state.reg_last_def.get(&RegId::X0).unwrap()];
@@ -438,7 +431,6 @@ mod tests {
         let view = ScanView {
             deps: deps.view(),
             pair_split: pair_split.view(),
-            init_mem_loads: init_mem_loads.view(),
             line_count: state.line_count,
         };
         let start = vec![0u32];
@@ -466,7 +458,6 @@ mod tests {
         let view = ScanView {
             deps: deps.view(),
             pair_split: pair_split.view(),
-            init_mem_loads: init_mem_loads.view(),
             line_count: state.line_count,
         };
         let start = vec![*state.reg_last_def.get(&RegId::X0).unwrap()];

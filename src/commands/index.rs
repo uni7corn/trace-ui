@@ -53,6 +53,8 @@ enum IndexResult {
         lidx_store: CachedStore<LineIndexArchive>,
         total_lines: u32,
         format: crate::taint::types::TraceFormat,
+        call_annotations: std::collections::HashMap<u32, crate::taint::gumtrace_parser::CallAnnotation>,
+        consumed_seqs: Vec<u32>,
     },
     ScanResult(taint::ScanResult),
 }
@@ -90,10 +92,10 @@ async fn build_index_inner(
 
         // 检测格式（在缓存逻辑之前，确保后续路径都使用正确的格式）
         let detected_format = taint::gumtrace_parser::detect_format(data);
+        eprintln!("[index] detected_format={:?}, force={}, file_path={}", detected_format, force, file_path);
 
-        // 尝试从 rkyv 缓存加载（仅当三个缓存全部命中时才使用，否则走全量并行扫描）
-        // gumtrace 格式的 call_annotations/consumed_seqs 不在缓存中，需要全量扫描
-        if !force && detected_format == crate::taint::types::TraceFormat::Unidbg {
+        // 尝试从 rkyv 缓存加载（三个核心缓存全部命中时使用）
+        if !force {
             if let (Some(p2_mmap), Some(scan_mmap), Some(lidx_mmap)) = (
                 cache::load_phase2_rkyv(&file_path, data),
                 cache::load_scan_rkyv(&file_path, data),
@@ -101,18 +103,25 @@ async fn build_index_inner(
             ) {
                 let string_index = cache::load_string_cache(&file_path, data);
 
+                // Gumtrace 格式的 call_annotations/consumed_seqs 从独立缓存加载
+                let (call_annotations, consumed_seqs) = if detected_format == crate::taint::types::TraceFormat::Gumtrace {
+                    cache::load_gumtrace_extra(&file_path, data)
+                        .unwrap_or_else(|| (std::collections::HashMap::new(), Vec::new()))
+                } else {
+                    (std::collections::HashMap::new(), Vec::new())
+                };
+
                 // Build CachedStore instances
                 let phase2_store = CachedStore::Mapped(p2_mmap);
                 let call_tree = phase2_store.deserialize_call_tree();
 
                 let scan_store = CachedStore::Mapped(scan_mmap);
-                let _line_count = scan_store.line_count();
                 let reg_last_def = scan_store.deserialize_reg_last_def();
 
                 let lidx_store = CachedStore::Mapped(lidx_mmap);
                 let total_lines = lidx_store.total_lines();
 
-                eprintln!("[index] rkyv cache hit: total_lines={}", total_lines);
+                eprintln!("[index] rkyv cache hit: total_lines={}, format={:?}", total_lines, detected_format);
                 return Ok(IndexResult::CacheHit {
                     phase2_store,
                     call_tree,
@@ -122,6 +131,8 @@ async fn build_index_inner(
                     lidx_store,
                     total_lines,
                     format: detected_format,
+                    call_annotations,
+                    consumed_seqs,
                 });
             }
         }
@@ -183,14 +194,15 @@ async fn build_index_inner(
             lidx_store,
             total_lines,
             format,
+            call_annotations,
+            consumed_seqs,
         } => {
             let mut sessions = state.sessions.write().map_err(|e| e.to_string())?;
             if let Some(session) = sessions.get_mut(session_id) {
                 session.total_lines = total_lines;
                 session.trace_format = format;
-                // Cache hit for unidbg: no call_annotations/consumed_seqs
-                session.call_annotations = std::collections::HashMap::new();
-                session.consumed_seqs = Vec::new();
+                session.call_annotations = call_annotations;
+                session.consumed_seqs = consumed_seqs;
                 session.rebuild_call_search_texts();
 
                 // New rkyv fields
@@ -287,6 +299,13 @@ async fn build_index_inner(
                     }
                     if let Some(ref si) = session.string_index {
                         cache::save_string_cache(&fp, data, si);
+                    }
+
+                    // Gumtrace 格式额外缓存 call_annotations + consumed_seqs
+                    if session.trace_format == crate::taint::types::TraceFormat::Gumtrace
+                        && !session.call_annotations.is_empty()
+                    {
+                        cache::save_gumtrace_extra(&fp, data, &session.call_annotations, &session.consumed_seqs);
                     }
 
                     eprintln!("[index] background rkyv cache save complete");

@@ -118,7 +118,10 @@ where
 
     let bytes = match rkyv::to_bytes::<rkyv::rancor::Error>(value) {
         Ok(b) => b,
-        Err(_) => return,
+        Err(e) => {
+            eprintln!("[cache] rkyv serialization failed for {}: {:?}", suffix, e);
+            return;
+        }
     };
 
     let file = match std::fs::File::create(&path) {
@@ -134,24 +137,50 @@ where
     header.extend_from_slice(&head_hash(data));
     header.resize(HEADER_LEN_V4, 0); // pad to 64 bytes
 
-    if writer.write_all(&header).is_err() { return; }
-    if writer.write_all(&bytes).is_err() { return; }
+    if writer.write_all(&header).is_err() {
+        eprintln!("[cache] failed to write header for {}", suffix);
+        return;
+    }
+    if writer.write_all(&bytes).is_err() {
+        eprintln!("[cache] failed to write rkyv data for {} ({} bytes)", suffix, bytes.len());
+        return;
+    }
     let _ = writer.flush();
+    eprintln!("[cache] saved {} ({} + {} bytes)", suffix, HEADER_LEN_V4, bytes.len());
 }
 
 fn load_rkyv_mmap(file_path: &str, data: &[u8], suffix: &str) -> Option<Arc<Mmap>> {
     let path = cache_path_ext(file_path, suffix)?;
-    let file = std::fs::File::open(&path).ok()?;
+    let file = match std::fs::File::open(&path) {
+        Ok(f) => f,
+        Err(_) => {
+            eprintln!("[cache] {} not found: {:?}", suffix, path);
+            return None;
+        }
+    };
     let mmap = unsafe { Mmap::map(&file) }.ok()?;
 
     // Validate V4 header
-    if mmap.len() < HEADER_LEN_V4 { return None; }
-    if &mmap[0..8] != MAGIC_V4 { return None; }
+    if mmap.len() < HEADER_LEN_V4 {
+        eprintln!("[cache] {} too small: {} bytes", suffix, mmap.len());
+        return None;
+    }
+    if &mmap[0..8] != MAGIC_V4 {
+        eprintln!("[cache] {} magic mismatch: {:?}", suffix, &mmap[0..8]);
+        return None;
+    }
     let stored_size = u64::from_le_bytes(mmap[8..16].try_into().ok()?);
-    if stored_size != data.len() as u64 { return None; }
+    if stored_size != data.len() as u64 {
+        eprintln!("[cache] {} size mismatch: stored={} actual={}", suffix, stored_size, data.len());
+        return None;
+    }
     let cached_hash: [u8; 32] = mmap[16..48].try_into().ok()?;
-    if cached_hash != head_hash(data) { return None; }
+    if cached_hash != head_hash(data) {
+        eprintln!("[cache] {} hash mismatch", suffix);
+        return None;
+    }
 
+    eprintln!("[cache] {} loaded: {} bytes", suffix, mmap.len());
     Some(Arc::new(mmap))
 }
 
@@ -195,10 +224,30 @@ pub fn load_string_cache(file_path: &str, data: &[u8]) -> Option<StringIndex> {
     load_cached(file_path, data, ".strings")
 }
 
+// ── Gumtrace extra (call_annotations + consumed_seqs) bincode 缓存 ──
+
+use crate::taint::gumtrace_parser::CallAnnotation;
+
+pub fn save_gumtrace_extra(
+    file_path: &str,
+    data: &[u8],
+    call_annotations: &std::collections::HashMap<u32, CallAnnotation>,
+    consumed_seqs: &[u32],
+) {
+    save_cached(file_path, data, ".gum-extra", &(call_annotations, consumed_seqs));
+}
+
+pub fn load_gumtrace_extra(
+    file_path: &str,
+    data: &[u8],
+) -> Option<(std::collections::HashMap<u32, CallAnnotation>, Vec<u32>)> {
+    load_cached(file_path, data, ".gum-extra")
+}
+
 /// 删除指定文件的所有缓存（新 rkyv + 旧 bincode）
 pub fn delete_cache(file_path: &str) {
     // New rkyv suffixes
-    for suffix in [".p2.rkyv", ".scan.rkyv", ".lidx.rkyv", ".strings.bin"] {
+    for suffix in [".p2.rkyv", ".scan.rkyv", ".lidx.rkyv", ".strings.bin", ".gum-extra.bin"] {
         if let Some(p) = cache_path_ext(file_path, suffix) {
             let _ = std::fs::remove_file(p);
         }
