@@ -2,13 +2,16 @@
 
 #![allow(dead_code)]
 
+use std::collections::HashMap;
+
 use bitvec::prelude::BitVec;
 use rustc_hash::FxHashMap;
 
 use crate::taint::call_tree::{CallTree, CallTreeBuilder};
+use crate::taint::gumtrace_parser::CallAnnotation;
 use crate::taint::parallel_types::{
-    CallTreeEvent, PartialUnresolvedLoad, PartialUnresolvedPairLoad, UnresolvedLoad,
-    UnresolvedPairLoad, UnresolvedRegUse,
+    CallTreeEvent, GumtraceAnnotEvent, PartialUnresolvedLoad, PartialUnresolvedPairLoad,
+    SpecialLineData, UnresolvedLoad, UnresolvedPairLoad, UnresolvedRegUse,
 };
 use crate::taint::scanner::{push_unique, CompactDeps, PairSplitDeps, RegLastDef, CONTROL_DEP_BIT};
 
@@ -303,6 +306,74 @@ pub fn replay_call_tree_events(events: &[CallTreeEvent], total_lines: u32) -> Ca
     builder.finish(total_lines)
 }
 
+/// Replay Gumtrace annotation events sequentially.
+/// Produces exact call_annotations and extra consumed_seqs.
+pub fn replay_gumtrace_annotations(
+    events: &[GumtraceAnnotEvent],
+) -> (HashMap<u32, CallAnnotation>, Vec<u32>) {
+    let mut call_annotations = HashMap::new();
+    let mut extra_consumed = Vec::new();
+    let mut pending_call_seq: Option<u32> = None;
+    let mut current_annotation: Option<(u32, CallAnnotation)> = None;
+
+    for event in events {
+        match event {
+            GumtraceAnnotEvent::BranchInstr { seq } => {
+                pending_call_seq = Some(*seq);
+            }
+            GumtraceAnnotEvent::SpecialLine { seq: _, special } => {
+                match special {
+                    SpecialLineData::CallFunc { name, is_jni, raw } => {
+                        // Flush previous unfinished annotation
+                        if let Some((bl_seq, ann)) = current_annotation.take() {
+                            call_annotations.insert(bl_seq, ann);
+                        }
+                        if let Some(bl_seq) = pending_call_seq.take() {
+                            current_annotation = Some((bl_seq, CallAnnotation {
+                                func_name: name.clone(),
+                                is_jni: *is_jni,
+                                args: Vec::new(),
+                                ret_value: None,
+                                raw_lines: vec![raw.clone()],
+                            }));
+                        }
+                    }
+                    SpecialLineData::Arg { index, value, raw } => {
+                        if let Some((_, ref mut ann)) = current_annotation {
+                            ann.args.push((index.clone(), value.clone()));
+                            ann.raw_lines.push(raw.clone());
+                        }
+                    }
+                    SpecialLineData::Ret { value, raw } => {
+                        if let Some((bl_seq, mut ann)) = current_annotation.take() {
+                            ann.ret_value = Some(value.clone());
+                            ann.raw_lines.push(raw.clone());
+                            call_annotations.insert(bl_seq, ann);
+                        }
+                    }
+                    SpecialLineData::HexDump { raw } => {
+                        if let Some((_, ref mut ann)) = current_annotation {
+                            ann.raw_lines.push(raw.clone());
+                        }
+                    }
+                }
+            }
+            GumtraceAnnotEvent::OrphanLine { seq } => {
+                if current_annotation.is_some() {
+                    extra_consumed.push(*seq);
+                }
+            }
+        }
+    }
+
+    // Flush remaining
+    if let Some((bl_seq, ann)) = current_annotation.take() {
+        call_annotations.insert(bl_seq, ann);
+    }
+
+    (call_annotations, extra_consumed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -585,5 +656,71 @@ mod tests {
         ];
         let tree = replay_call_tree_events(&events, 15);
         assert_eq!(tree.nodes[1].func_name, Some("malloc".to_string()));
+    }
+
+    #[test]
+    fn test_replay_gumtrace_annotations() {
+        let events = vec![
+            GumtraceAnnotEvent::BranchInstr { seq: 10 },
+            GumtraceAnnotEvent::SpecialLine {
+                seq: 11,
+                special: SpecialLineData::CallFunc {
+                    name: "strcmp".to_string(),
+                    is_jni: false,
+                    raw: "call func: strcmp".to_string(),
+                },
+            },
+            GumtraceAnnotEvent::SpecialLine {
+                seq: 12,
+                special: SpecialLineData::Arg {
+                    index: "0".to_string(),
+                    value: "0x1234".to_string(),
+                    raw: "args0: 0x1234".to_string(),
+                },
+            },
+            GumtraceAnnotEvent::SpecialLine {
+                seq: 13,
+                special: SpecialLineData::Ret {
+                    value: "0".to_string(),
+                    raw: "ret: 0".to_string(),
+                },
+            },
+        ];
+
+        let (annotations, extra) = replay_gumtrace_annotations(&events);
+        assert_eq!(annotations.len(), 1);
+        assert!(annotations.contains_key(&10));
+        let ann = &annotations[&10];
+        assert_eq!(ann.func_name, "strcmp");
+        assert_eq!(ann.args.len(), 1);
+        assert_eq!(ann.ret_value, Some("0".to_string()));
+        assert!(extra.is_empty());
+    }
+
+    #[test]
+    fn test_replay_gumtrace_orphan_lines() {
+        let events = vec![
+            GumtraceAnnotEvent::BranchInstr { seq: 5 },
+            GumtraceAnnotEvent::SpecialLine {
+                seq: 6,
+                special: SpecialLineData::CallFunc {
+                    name: "test".to_string(),
+                    is_jni: false,
+                    raw: "call func: test".to_string(),
+                },
+            },
+            GumtraceAnnotEvent::OrphanLine { seq: 7 }, // unrecognized line while annotation active
+            GumtraceAnnotEvent::SpecialLine {
+                seq: 8,
+                special: SpecialLineData::Ret {
+                    value: "1".to_string(),
+                    raw: "ret: 1".to_string(),
+                },
+            },
+        ];
+
+        let (annotations, extra) = replay_gumtrace_annotations(&events);
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(extra, vec![7]); // orphan line added to consumed
     }
 }
