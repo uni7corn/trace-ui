@@ -211,15 +211,13 @@ async fn build_index_inner(
         // 检测格式（在缓存逻辑之前，确保后续路径都使用正确的格式）
         let detected_format = taint::gumtrace_parser::detect_format(data);
 
-        // 尝试从缓存加载
-        // 注意：gumtrace 格式的 call_annotations/consumed_seqs 不在缓存中，
-        // 需要强制全量扫描以构建这些数据
+        // 尝试从缓存加载（仅当三个缓存全部命中时才使用，否则走全量并行扫描）
+        // gumtrace 格式的 call_annotations/consumed_seqs 不在缓存中，需要全量扫描
         if !force && detected_format == crate::taint::types::TraceFormat::Unidbg {
             if let Some(cached_phase2) = cache::load_cache(&file_path, data) {
-                // Phase2 命中，尝试加载 ScanState 缓存
                 if let Some(cached_scan) = cache::load_scan_cache(&file_path, data) {
-                    // 双缓存命中，加载或构建 LineIndex
                     let line_index = load_or_build_line_index(&file_path, data);
+                    // 三缓存全部命中 → 秒开
                     return Ok(taint::ScanResult {
                         scan_state: cached_scan,
                         phase2: cached_phase2,
@@ -229,27 +227,8 @@ async fn build_index_inner(
                         consumed_seqs: Vec::new(),
                     });
                 }
-                // 仅 Phase2 命中，需要重建 ScanState — 发送初始进度
-                let _ = app_for_init.emit("index-progress", serde_json::json!({
-                    "sessionId": sid_for_init,
-                    "progress": 0.0,
-                    "done": false,
-                }));
-                let mut scan_state = taint::scanner::scan_pass1_bytes_with_progress(
-                    data, false, 0, None, &Default::default(), false, false,
-                    Some(&*progress_fn),
-                ).map_err(|e| format!("Scanner 失败: {}", e))?;
-                scan_state.compact();
-                cache::save_scan_cache(&file_path, data, &scan_state);
-                let line_index = load_or_build_line_index(&file_path, data);
-                return Ok(taint::ScanResult {
-                    scan_state,
-                    phase2: cached_phase2,
-                    line_index,
-                    format: detected_format,
-                    call_annotations: std::collections::HashMap::new(),
-                    consumed_seqs: Vec::new(),
-                });
+                // Phase2 命中但 ScanState 未命中 → 丢弃部分缓存，走全量并行扫描
+                // （旧的单线程回退路径已移除，并行扫描更快且会重新生成完整的 Phase2）
             }
         }
 
