@@ -96,7 +96,7 @@ pub fn scan_unified_parallel(
         }
     };
 
-    let result = merge::merge_all_chunks(chunk_results, format, data_only, Some(&merge_cb));
+    let result = merge::merge_all_chunks(chunk_results, format, data_only, skip_strings, Some(&merge_cb));
 
     if let Some(ref cb) = progress_fn_arc {
         cb(data.len(), data.len());
@@ -301,7 +301,7 @@ mod tests {
             })
             .collect();
 
-        let result = crate::taint::merge::merge_all_chunks(chunk_results, format, data_only, None);
+        let result = crate::taint::merge::merge_all_chunks(chunk_results, format, data_only, skip_strings, None);
         Ok(result)
     }
 

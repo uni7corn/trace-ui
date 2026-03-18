@@ -481,6 +481,7 @@ pub fn merge_all_chunks(
     chunk_results: Vec<ChunkResult>,
     format: TraceFormat,
     data_only: bool,
+    skip_strings: bool,
     progress_fn: Option<&dyn Fn(f64)>,
 ) -> ScanResult {
     let num_chunks = chunk_results.len();
@@ -770,9 +771,26 @@ pub fn merge_all_chunks(
         }
     };
 
-    // StringIndex — merge + fill xref counts (MemAccessIndex now available)
-    let mut string_index = merge_string_indices(chunk_string_indices);
-    crate::taint::strings::StringBuilder::fill_xref_counts(&mut string_index, &mem_accesses);
+    // StringIndex — 用路径 1 从 MemAccessIndex 精确构建（无跨 chunk 边界精度丢失）
+    let string_index = if !skip_strings {
+        use crate::taint::mem_access::MemRw;
+        let mut writes: Vec<(u64, u64, u8, u32)> = Vec::new();
+        for (addr, rec) in mem_accesses.iter_all() {
+            if rec.rw == MemRw::Write && rec.size <= 8 {
+                writes.push((addr, rec.data, rec.size, rec.seq));
+            }
+        }
+        writes.sort_unstable_by_key(|w| w.3);
+        let mut sb = crate::taint::strings::StringBuilder::new();
+        for &(addr, data, size, seq) in &writes {
+            sb.process_write(addr, data, size, seq);
+        }
+        let mut si = sb.finish();
+        crate::taint::strings::StringBuilder::fill_xref_counts(&mut si, &mem_accesses);
+        si
+    } else {
+        Default::default()
+    };
 
     // LineIndex
     let line_index = merge_line_indices(chunk_line_indices);
