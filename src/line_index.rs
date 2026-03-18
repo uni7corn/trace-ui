@@ -47,6 +47,17 @@ impl LineIndexBuilder {
         }
     }
 
+    /// 创建从指定行号开始的构建器（用于并行分块扫描）。
+    ///
+    /// `start_line` 是全局行号，确保 BLOCK_SIZE (256) 对齐在全局一致。
+    /// 仅当 `start_line % BLOCK_SIZE == 0` 时第一次 `add_line` 会记录采样点。
+    pub fn with_start_line(start_line: u32, capacity_hint: usize) -> Self {
+        Self {
+            sampled_offsets: Vec::with_capacity(capacity_hint / BLOCK_SIZE as usize + 1),
+            line_count: start_line,
+        }
+    }
+
     /// 完成构建，返回 LineIndex。
     pub fn finish(self) -> LineIndex {
         LineIndex {
