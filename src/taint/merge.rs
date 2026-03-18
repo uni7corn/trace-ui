@@ -5,9 +5,10 @@
 use bitvec::prelude::BitVec;
 use rustc_hash::FxHashMap;
 
+use crate::taint::call_tree::{CallTree, CallTreeBuilder};
 use crate::taint::parallel_types::{
-    PartialUnresolvedLoad, PartialUnresolvedPairLoad, UnresolvedLoad, UnresolvedPairLoad,
-    UnresolvedRegUse,
+    CallTreeEvent, PartialUnresolvedLoad, PartialUnresolvedPairLoad, UnresolvedLoad,
+    UnresolvedPairLoad, UnresolvedRegUse,
 };
 use crate::taint::scanner::{push_unique, CompactDeps, PairSplitDeps, RegLastDef, CONTROL_DEP_BIT};
 
@@ -254,6 +255,54 @@ pub fn rebuild_compact_deps(
     merged
 }
 
+/// Replay CallTree events sequentially through a single CallTreeBuilder.
+/// This handles blr_pending_pc logic correctly across chunk boundaries.
+pub fn replay_call_tree_events(events: &[CallTreeEvent], total_lines: u32) -> CallTree {
+    let mut builder = CallTreeBuilder::new();
+    let mut blr_pending_pc: Option<u64> = None;
+    let mut root_addr_set = false;
+
+    for event in events {
+        match event {
+            CallTreeEvent::SetRootAddr { addr } => {
+                if !root_addr_set {
+                    builder.set_root_addr(*addr);
+                    root_addr_set = true;
+                }
+            }
+            CallTreeEvent::LineAddr { seq, addr } => {
+                // Handle BLR pending check (same logic as scan_unified/phase2)
+                if let Some(blr_pc) = blr_pending_pc.take() {
+                    if *addr != 0 {
+                        builder.update_current_func_addr(*addr);
+                        if *addr == blr_pc + 4 {
+                            // unidbg intercepted call — no function body
+                            builder.on_ret(seq.saturating_sub(1));
+                        }
+                    } else {
+                        // Can't extract address, keep pending
+                        blr_pending_pc = Some(blr_pc);
+                    }
+                }
+            }
+            CallTreeEvent::Call { seq, target } => {
+                builder.on_call(*seq, *target);
+            }
+            CallTreeEvent::Ret { seq } => {
+                builder.on_ret(*seq);
+            }
+            CallTreeEvent::BlrPending { seq: _, pc } => {
+                blr_pending_pc = Some(*pc);
+            }
+            CallTreeEvent::SetFuncName { entry_seq, name } => {
+                builder.set_func_name_by_entry_seq(*entry_seq, name);
+            }
+        }
+    }
+
+    builder.finish(total_lines)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -488,5 +537,53 @@ mod tests {
         let merged = rebuild_compact_deps(&[c0], &[0], &patch_edges);
         assert_eq!(merged.row(1).len(), 1); // deduped to single entry
         assert_eq!(merged.row(1), &[0]);
+    }
+
+    #[test]
+    fn test_replay_call_tree_basic() {
+        let events = vec![
+            CallTreeEvent::Call { seq: 5, target: 0x2000 },
+            CallTreeEvent::Ret { seq: 10 },
+            CallTreeEvent::Call { seq: 15, target: 0x3000 },
+            CallTreeEvent::Call { seq: 20, target: 0x4000 },
+            CallTreeEvent::Ret { seq: 25 },
+            CallTreeEvent::Ret { seq: 30 },
+        ];
+        let tree = replay_call_tree_events(&events, 35);
+        // Root + 3 calls
+        assert_eq!(tree.nodes.len(), 4);
+        assert_eq!(tree.nodes[0].children_ids, vec![1, 2]);
+        assert_eq!(tree.nodes[1].entry_seq, 5);
+        assert_eq!(tree.nodes[1].exit_seq, 10);
+        assert_eq!(tree.nodes[2].entry_seq, 15);
+        assert_eq!(tree.nodes[2].children_ids, vec![3]);
+        assert_eq!(tree.nodes[3].entry_seq, 20);
+        assert_eq!(tree.nodes[3].exit_seq, 25);
+    }
+
+    #[test]
+    fn test_replay_call_tree_blr_intercept() {
+        // BLR at seq 10 with PC 0x2010, next line addr = 0x2014 = PC+4 → intercepted
+        let events = vec![
+            CallTreeEvent::Call { seq: 10, target: 0x3000 },
+            CallTreeEvent::BlrPending { seq: 10, pc: 0x2010 },
+            CallTreeEvent::LineAddr { seq: 11, addr: 0x2014 }, // PC+4 → intercepted
+        ];
+        let tree = replay_call_tree_events(&events, 20);
+        // Root + 1 call that was immediately returned
+        assert_eq!(tree.nodes.len(), 2);
+        assert_eq!(tree.nodes[1].entry_seq, 10);
+        assert_eq!(tree.nodes[1].exit_seq, 10); // ret at seq 10 (11-1)
+    }
+
+    #[test]
+    fn test_replay_call_tree_func_name() {
+        let events = vec![
+            CallTreeEvent::Call { seq: 5, target: 0x2000 },
+            CallTreeEvent::SetFuncName { entry_seq: 5, name: "malloc".to_string() },
+            CallTreeEvent::Ret { seq: 10 },
+        ];
+        let tree = replay_call_tree_events(&events, 15);
+        assert_eq!(tree.nodes[1].func_name, Some("malloc".to_string()));
     }
 }
