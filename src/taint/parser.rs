@@ -160,7 +160,11 @@ fn parse_line_inner(raw: &str, extract_regs: bool) -> Option<ParsedLine> {
                         None => return None,
                     }
                 };
-                find_reg_value_u128(bytes, reg_name.as_bytes(), search_start)
+                // unidbg trace 中 SIMD 值始终用 q 前缀记录，
+                // 但指令操作数可能用 v 前缀（如 st1 {v0.16b}），需要转换
+                let q_name = simd_reg_to_q_prefix(reg_name);
+                let search_name = q_name.as_deref().unwrap_or(reg_name);
+                find_reg_value_u128(bytes, search_name.as_bytes(), search_start)
             });
             match v128 {
                 Some(val) => (None, Some(val as u64), Some((val >> 64) as u64)),
@@ -196,7 +200,9 @@ fn parse_line_inner(raw: &str, extract_regs: bool) -> Option<ParsedLine> {
                             None => return None,
                         }
                     };
-                    find_reg_value_u128(bytes, reg_name.as_bytes(), search_start)
+                    let q_name = simd_reg_to_q_prefix(reg_name);
+                    let search_name = q_name.as_deref().unwrap_or(reg_name);
+                    find_reg_value_u128(bytes, search_name.as_bytes(), search_start)
                 });
                 match v128 {
                     Some(val) => (None, Some(val as u64), Some((val >> 64) as u64)),
@@ -536,6 +542,18 @@ pub(crate) fn find_reg_value_u128(bytes: &[u8], reg_name: &[u8], start_pos: usiz
     parse_hex_u128(find_reg_hex_bytes(bytes, reg_name, start_pos)?)
 }
 
+/// 将 SIMD 寄存器名的 v/d/s/b/h 前缀转换为 q 前缀。
+/// unidbg trace 中 SIMD 寄存器值始终以 q 前缀记录（如 q0=0x...），
+/// 但指令操作数可能使用其他前缀（如 v0、d0、s0）。
+fn simd_reg_to_q_prefix(reg_name: &str) -> Option<String> {
+    let first = reg_name.as_bytes().first()?;
+    if matches!(first, b'v' | b'd' | b's' | b'b' | b'h') {
+        Some(format!("q{}", &reg_name[1..]))
+    } else {
+        None
+    }
+}
+
 /// Infer memory access width from mnemonic and the first operand's raw register prefix.
 ///
 /// The prefix must be captured BEFORE register normalization (w→x, d→v, etc.)
@@ -803,6 +821,40 @@ mod tests {
         assert_eq!(line.operands[1].as_reg(), Some(RegId::X0));
         assert_eq!(line.lane_index, None);
     }
+
+    #[test]
+    fn test_simd_v_prefix_store_value_extraction() {
+        // st1 {v0.16b} 的操作数用 v 前缀，但 trace 中值用 q 前缀
+        let raw = r#"[00:00:00 001][lib.so 0x100] [4c000000] 0x40000100: "st1 {v0.16b}, [x0]" ; mem[WRITE] abs=0x40500000 q0=0x00000000000000ff00000000000000aa x0=0x40500000"#;
+        let line = parse_line(raw).expect("should parse");
+        let mem = line.mem_op.as_ref().expect("should have mem op");
+        assert_eq!(mem.elem_width, 16);
+        assert_eq!(mem.value_lo, Some(0x00000000000000aa));
+        assert_eq!(mem.value_hi, Some(0x00000000000000ff));
+    }
+
+    #[test]
+    fn test_simd_v_prefix_load_value_extraction() {
+        // ld1 {v0.16b} LOAD 场景：值在 => 之后
+        let raw = r#"[00:00:00 001][lib.so 0x100] [4c400000] 0x40000100: "ld1 {v0.16b}, [x0]" ; mem[READ] abs=0x40500000 q0=0x0 x0=0x40500000 => q0=0x00000000000000020000000000000001"#;
+        let line = parse_line(raw).expect("should parse");
+        let mem = line.mem_op.as_ref().expect("should have mem op");
+        assert_eq!(mem.elem_width, 16);
+        assert_eq!(mem.value_lo, Some(0x0000000000000001));
+        assert_eq!(mem.value_hi, Some(0x0000000000000002));
+    }
+
+    #[test]
+    fn test_simd_q_prefix_still_works() {
+        // ldr q0 直接用 q 前缀，确保不被破坏
+        let raw = r#"[00:00:00 001][lib.so 0x100] [3dc00000] 0x40000100: "ldr q0, [x0]" ; mem[READ] abs=0x40500000 x0=0x40500000 => q0=0x00000000000000030000000000000004"#;
+        let line = parse_line(raw).expect("should parse");
+        let mem = line.mem_op.as_ref().expect("should have mem op");
+        assert_eq!(mem.elem_width, 16);
+        assert_eq!(mem.value_lo, Some(0x0000000000000004));
+        assert_eq!(mem.value_hi, Some(0x0000000000000003));
+    }
+
 
     #[test]
     fn test_parse_simd_multi_reg() {
