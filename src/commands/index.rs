@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 use crate::cache;
 use crate::flat::archives::{CachedStore, Phase2Archive, ScanArchive};
 use crate::flat::convert;
@@ -184,7 +184,7 @@ async fn build_index_inner(
     eprintln!("[index] spawn_blocking returned, writing to session...");
 
     // 写入结果到 session
-    let file_path_for_cache = match result {
+    match result {
         IndexResult::CacheHit {
             phase2_store,
             call_tree,
@@ -215,104 +215,98 @@ async fn build_index_inner(
 
                 eprintln!("[index] session populated from section cache");
             }
-            None // no need to save cache again
+            // 缓存命中，无需再次保存
         }
         IndexResult::ScanResult(scan_result) => {
-            let mut sessions = state.sessions.write().map_err(|e| e.to_string())?;
-            let fp = if let Some(session) = sessions.get_mut(session_id) {
-                session.total_lines = scan_result.line_index.total_lines();
-                session.trace_format = scan_result.format;
-                session.call_annotations = scan_result.call_annotations;
-                session.consumed_seqs = scan_result.consumed_seqs;
-                session.rebuild_call_search_texts();
+            // 1. 在 write lock 外构建 archives（不阻塞其他 session 操作）
+            let phase2 = scan_result.phase2;
+            let call_tree = phase2.call_tree.clone();
+            let string_index = phase2.string_index;
 
-                // Take ownership of phase2 to populate new fields
-                let phase2 = scan_result.phase2;
-
-                // Clone call_tree for the session field (CallTree is typically small)
-                session.call_tree = Some(phase2.call_tree.clone());
-
-                // Build Phase2Archive from native types
-                let phase2_archive = Phase2Archive {
-                    mem_accesses: convert::mem_access_to_flat(&phase2.mem_accesses),
-                    reg_checkpoints: convert::reg_checkpoints_to_flat(&phase2.reg_checkpoints),
-                    call_tree: phase2.call_tree,
-                };
-                session.phase2_store = Some(CachedStore::Owned(phase2_archive));
-
-                // Move string_index into new field
-                session.string_index = Some(phase2.string_index);
-
-                // Build ScanArchive from native types
-                let scan_state = &scan_result.scan_state;
-                let scan_archive = ScanArchive {
-                    deps: convert::deps_to_flat(&scan_state.deps),
-                    mem_last_def: convert::mem_last_def_to_flat(&scan_state.mem_last_def),
-                    pair_split: convert::pair_split_to_flat(&scan_state.pair_split),
-                    init_mem_loads: convert::bitvec_to_flat(&scan_state.init_mem_loads),
-                    reg_last_def_inner: scan_state.reg_last_def.inner().to_vec(),
-                    line_count: scan_state.line_count,
-                    parsed_count: scan_state.parsed_count,
-                    mem_op_count: scan_state.mem_op_count,
-                };
-                session.reg_last_def = Some(scan_state.reg_last_def.clone());
-                session.scan_store = Some(CachedStore::Owned(scan_archive));
-
-                // Build LineIndexArchive
-                let lidx_archive = convert::line_index_to_archive(&scan_result.line_index);
-                session.lidx_store = Some(CachedStore::Owned(lidx_archive));
-
-                Some(session.file_path.clone())
-            } else {
-                None
+            let phase2_archive = Phase2Archive {
+                mem_accesses: convert::mem_access_to_flat(&phase2.mem_accesses),
+                reg_checkpoints: convert::reg_checkpoints_to_flat(&phase2.reg_checkpoints),
+                call_tree: phase2.call_tree,
             };
-            fp
-        }
-    };
 
-    // 后台保存缓存（不阻塞用户交互）
-    if let Some(fp) = file_path_for_cache {
-        let app_cache = app.clone();
-        let sid_cache = session_id.to_string();
-        tauri::async_runtime::spawn(async move {
-            let _ = tauri::async_runtime::spawn_blocking(move || {
-                let state = app_cache.state::<AppState>();
-                let sessions = state.sessions.read().unwrap();
-                if let Some(session) = sessions.get(&*sid_cache) {
-                    let data: &[u8] = &session.mmap;
+            let scan_state = &scan_result.scan_state;
+            let scan_archive = ScanArchive {
+                deps: convert::deps_to_flat(&scan_state.deps),
+                mem_last_def: convert::mem_last_def_to_flat(&scan_state.mem_last_def),
+                pair_split: convert::pair_split_to_flat(&scan_state.pair_split),
+                init_mem_loads: convert::bitvec_to_flat(&scan_state.init_mem_loads),
+                reg_last_def_inner: scan_state.reg_last_def.inner().to_vec(),
+                line_count: scan_state.line_count,
+                parsed_count: scan_state.parsed_count,
+                mem_op_count: scan_state.mem_op_count,
+            };
+            let reg_last_def = scan_state.reg_last_def.clone();
 
-                    // Save section-based caches
-                    if let Some(ref store) = session.phase2_store {
-                        if let CachedStore::Owned(ref archive) = store {
-                            cache::save_phase2_cache(&fp, data, archive);
-                        }
-                    }
-                    if let Some(ref store) = session.scan_store {
-                        if let CachedStore::Owned(ref archive) = store {
-                            cache::save_scan_cache(&fp, data, archive);
-                        }
-                    }
-                    if let Some(ref store) = session.lidx_store {
-                        if let CachedStore::Owned(ref archive) = store {
-                            cache::save_lidx_cache(&fp, data, archive);
-                        }
-                    }
-                    if let Some(ref si) = session.string_index {
-                        cache::save_string_cache(&fp, data, si);
-                    }
+            let lidx_archive = convert::line_index_to_archive(&scan_result.line_index);
 
-                    // Gumtrace 格式额外缓存 call_annotations + consumed_seqs
-                    if session.trace_format == crate::taint::types::TraceFormat::Gumtrace
+            // 2. 序列化为 bytes（to_sections 只借用 &self，之后 archive 仍可 move 进 session）
+            eprintln!("[index] serializing archives to cache bytes...");
+            let p2_bytes = phase2_archive.to_sections();
+            let scan_bytes = scan_archive.to_sections();
+            let lidx_bytes = lidx_archive.to_sections();
+            let si_bytes = bincode::serialize(&string_index).ok();
+            eprintln!("[index] serialization done: p2={}B scan={}B lidx={}B",
+                p2_bytes.len(), scan_bytes.len(), lidx_bytes.len());
+
+            // 3. 短暂 write lock：仅存储数据到 session
+            let (fp, mmap_arc, gum_extra) = {
+                let mut sessions = state.sessions.write().map_err(|e| e.to_string())?;
+                if let Some(session) = sessions.get_mut(session_id) {
+                    session.total_lines = scan_result.line_index.total_lines();
+                    session.trace_format = scan_result.format;
+
+                    session.call_tree = Some(call_tree);
+                    session.string_index = Some(string_index);
+                    session.reg_last_def = Some(reg_last_def);
+                    session.phase2_store = Some(CachedStore::Owned(phase2_archive));
+                    session.scan_store = Some(CachedStore::Owned(scan_archive));
+                    session.lidx_store = Some(CachedStore::Owned(lidx_archive));
+
+                    session.call_annotations = scan_result.call_annotations;
+                    session.consumed_seqs = scan_result.consumed_seqs;
+                    session.rebuild_call_search_texts();
+
+                    // 提取 gumtrace extra（在锁内 clone，数据量小）
+                    let gum_extra = if session.trace_format == crate::taint::types::TraceFormat::Gumtrace
                         && !session.call_annotations.is_empty()
                     {
-                        cache::save_gumtrace_extra(&fp, data, &session.call_annotations, &session.consumed_seqs);
-                    }
+                        Some((session.call_annotations.clone(), session.consumed_seqs.clone()))
+                    } else {
+                        None
+                    };
 
-                    eprintln!("[index] background background cache save complete");
+                    (session.file_path.clone(), session.mmap.clone(), gum_extra)
+                } else {
+                    return Ok(());
                 }
-            }).await;
-        });
-    }
+            };
+            // write lock 已释放
+
+            // 4. 后台写文件：只用预序列化的 bytes + mmap，不依赖 session
+            tauri::async_runtime::spawn(async move {
+                let _ = tauri::async_runtime::spawn_blocking(move || {
+                    let data: &[u8] = &mmap_arc;
+                    cache::save_sections_raw(&fp, data, ".p2.cache", &p2_bytes);
+                    cache::save_sections_raw(&fp, data, ".scan.cache", &scan_bytes);
+                    cache::save_sections_raw(&fp, data, ".lidx.cache", &lidx_bytes);
+                    if let Some(si_bytes) = &si_bytes {
+                        cache::save_bincode_raw(&fp, data, ".strings", si_bytes);
+                    }
+                    if let Some((ref anns, ref seqs)) = gum_extra {
+                        cache::save_gumtrace_extra(&fp, data, anns, seqs);
+                    }
+                    eprintln!("[index] background cache save complete");
+                }).await;
+            });
+
+            ()
+        }
+    };
 
     Ok(())
 }

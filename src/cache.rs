@@ -3,8 +3,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use sha2::{Sha256, Digest};
 use memmap2::Mmap;
-use crate::flat::archives::{Phase2Archive, ScanArchive};
-use crate::flat::line_index::LineIndexArchive;
 use crate::taint::strings::StringIndex;
 
 const MAGIC: &[u8; 8] = b"TCACHE03";
@@ -105,9 +103,28 @@ fn save_cached<T: serde::Serialize>(file_path: &str, data: &[u8], suffix: &str, 
     let _ = writer.flush();
 }
 
+/// 将预序列化的 bincode 字节写入缓存文件（TCACHE03 header + raw bytes），不依赖 session。
+pub fn save_bincode_raw(file_path: &str, data: &[u8], suffix: &str, payload: &[u8]) {
+    let Some(path) = cache_path(file_path, suffix) else { return };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let file = match std::fs::File::create(&path) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let mut writer = BufWriter::new(file);
+    let mut header = Vec::with_capacity(48);
+    write_header(&mut header, data);
+    if writer.write_all(&header).is_err() { return; }
+    if writer.write_all(payload).is_err() { return; }
+    let _ = writer.flush();
+}
+
 // ── Section-based cache save/load ──
 
-fn save_sections_cached(file_path: &str, data: &[u8], suffix: &str, section_bytes: &[u8]) {
+/// 将预序列化的 section 字节写入缓存文件（header + raw bytes），不依赖 session。
+pub fn save_sections_raw(file_path: &str, data: &[u8], suffix: &str, section_bytes: &[u8]) {
     let Some(path) = cache_path_ext(file_path, suffix) else { return };
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -166,33 +183,14 @@ fn load_cache_mmap(file_path: &str, data: &[u8], suffix: &str) -> Option<Arc<Mma
     Some(Arc::new(mmap))
 }
 
-// ── Phase2 cache ──
-
-pub fn save_phase2_cache(file_path: &str, data: &[u8], archive: &Phase2Archive) {
-    let section_bytes = archive.to_sections();
-    save_sections_cached(file_path, data, ".p2.cache", &section_bytes);
-}
+// ── Section-based cache load ──
 
 pub fn load_phase2_cache(file_path: &str, data: &[u8]) -> Option<Arc<Mmap>> {
     load_cache_mmap(file_path, data, ".p2.cache")
 }
 
-// ── Scan cache ──
-
-pub fn save_scan_cache(file_path: &str, data: &[u8], archive: &ScanArchive) {
-    let section_bytes = archive.to_sections();
-    save_sections_cached(file_path, data, ".scan.cache", &section_bytes);
-}
-
 pub fn load_scan_cache(file_path: &str, data: &[u8]) -> Option<Arc<Mmap>> {
     load_cache_mmap(file_path, data, ".scan.cache")
-}
-
-// ── LineIndex cache ──
-
-pub fn save_lidx_cache(file_path: &str, data: &[u8], archive: &LineIndexArchive) {
-    let section_bytes = archive.to_sections();
-    save_sections_cached(file_path, data, ".lidx.cache", &section_bytes);
 }
 
 pub fn load_lidx_cache(file_path: &str, data: &[u8]) -> Option<Arc<Mmap>> {
