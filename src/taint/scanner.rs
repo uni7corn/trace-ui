@@ -258,6 +258,16 @@ impl CompactDeps {
         Self { offsets, data }
     }
 
+    /// Accessor for offsets slice (for flat conversion).
+    pub fn offsets_slice(&self) -> &[u32] {
+        &self.offsets
+    }
+
+    /// Accessor for data slice (for flat conversion).
+    pub fn data_slice(&self) -> &[u32] {
+        &self.data
+    }
+
     /// Number of dependency edges for row i.
     #[allow(dead_code)]
     pub(crate) fn row_len(&self, i: usize) -> usize {

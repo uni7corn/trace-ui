@@ -112,6 +112,11 @@ impl LineIndex {
         self.total
     }
 
+    /// Accessor for sampled_offsets slice (for flat conversion).
+    pub fn sampled_offsets(&self) -> &[u64] {
+        &self.sampled_offsets
+    }
+
     /// 返回指定行号的起始字节偏移（通过采样点 + 向前扫描换行符定位）。
     /// 用于并行搜索时的分块定位。
     pub fn line_byte_offset(&self, data: &[u8], seq: u32) -> Option<u64> {
