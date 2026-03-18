@@ -470,6 +470,7 @@ pub fn merge_all_chunks(
     chunk_results: Vec<ChunkResult>,
     format: TraceFormat,
     data_only: bool,
+    progress_fn: Option<&dyn Fn(f64)>,
 ) -> ScanResult {
     let num_chunks = chunk_results.len();
     let mut all_patch_edges: Vec<(u32, u32)> = Vec::new();
@@ -591,10 +592,6 @@ pub fn merge_all_chunks(
             all_patch_edges.extend(ctrl_patches);
         }
 
-        // Accumulate events
-        all_call_events.extend(chunk.call_tree_events.iter().cloned());
-        all_gumtrace_events.extend(chunk.gumtrace_annot_events.iter().cloned());
-
         // Update global state from this chunk's boundary
         for (&addr, &val) in &chunk.boundary.final_mem_last_def {
             global_mem_last_def.insert(addr, val);
@@ -611,6 +608,8 @@ pub fn merge_all_chunks(
             global_last_cond_branch = chunk.boundary.final_last_cond_branch;
         }
     }
+
+    if let Some(ref cb) = progress_fn { cb(0.2); }
 
     // === Pass 2: Decompose chunk_results (move out data) ===
     let mut chunk_deps = Vec::with_capacity(num_chunks);
@@ -634,6 +633,10 @@ pub fn merge_all_chunks(
         chunk_string_indices.push(chunk.string_index);
         chunk_line_indices.push(chunk.line_index);
         all_consumed_seqs.extend(chunk.consumed_seqs);
+
+        // Move events (not clone) — saves ~20GB for large files
+        all_call_events.extend(chunk.call_tree_events);
+        all_gumtrace_events.extend(chunk.gumtrace_annot_events);
         total_parsed_count += chunk.boundary.final_parsed_count;
         total_mem_op_count += chunk.boundary.final_mem_op_count;
 
@@ -661,6 +664,8 @@ pub fn merge_all_chunks(
         }
     }
 
+    if let Some(ref cb) = progress_fn { cb(0.4); }
+
     // === Rebuild unified data structures ===
 
     // Total lines (compute before dropping chunk_deps)
@@ -672,6 +677,8 @@ pub fn merge_all_chunks(
     drop(chunk_deps); // Free ~6GB immediately
     drop(all_patch_edges); // Free patch edges
 
+    if let Some(ref cb) = progress_fn { cb(0.6); }
+
     // CallTree
     let call_tree = replay_call_tree_events(&all_call_events, total_lines);
 
@@ -681,6 +688,8 @@ pub fn merge_all_chunks(
     } else {
         (HashMap::new(), Vec::new())
     };
+
+    if let Some(ref cb) = progress_fn { cb(0.8); }
 
     // consumed_seqs
     all_consumed_seqs.extend(extra_consumed);
@@ -737,6 +746,8 @@ pub fn merge_all_chunks(
         reg_checkpoints: merged_ckpts,
         string_index,
     };
+
+    if let Some(ref cb) = progress_fn { cb(1.0); }
 
     ScanResult {
         scan_state,

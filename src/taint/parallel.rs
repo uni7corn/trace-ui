@@ -83,8 +83,15 @@ pub fn scan_unified_parallel(
         cb(data_len * 2 / 3, data_len);
     }
 
-    // Phase 2: Sequential merge
-    let result = merge::merge_all_chunks(chunk_results, format, data_only);
+    // Phase 2: Sequential merge with progress reporting
+    let merge_cb = |phase2_frac: f64| {
+        if let Some(ref pfn) = progress_fn_arc {
+            let global = (2.0 / 3.0 + phase2_frac / 3.0) * data_len as f64;
+            pfn(global as usize, data_len);
+        }
+    };
+
+    let result = merge::merge_all_chunks(chunk_results, format, data_only, Some(&merge_cb));
 
     if let Some(ref cb) = progress_fn_arc {
         cb(data.len(), data.len());
@@ -289,7 +296,7 @@ mod tests {
             })
             .collect();
 
-        let result = crate::taint::merge::merge_all_chunks(chunk_results, format, data_only);
+        let result = crate::taint::merge::merge_all_chunks(chunk_results, format, data_only, None);
         Ok(result)
     }
 

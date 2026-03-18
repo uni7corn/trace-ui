@@ -103,6 +103,10 @@ pub fn scan_chunk(
     // Track whether we've emitted SetRootAddr
     let mut root_addr_set = false;
 
+    // Track BLR state for selective LineAddr emission
+    let mut prev_was_blr = false;
+    let mut is_first_parsed_line = true;
+
     // ── Progress tracking ──
     let chunk_total = end_byte - start_byte;
     let progress_interval = chunk_total / 100 + 1;
@@ -575,11 +579,20 @@ pub fn scan_chunk(
                 });
                 root_addr_set = true;
             }
-            call_tree_events.push(CallTreeEvent::LineAddr {
-                seq: i,
-                addr: insn_addr_for_ct,
-            });
+            // Only emit LineAddr when needed for BLR pending detection:
+            // - After a BLR instruction (prev_was_blr flag)
+            // - First line of chunk (might follow cross-chunk BLR)
+            if prev_was_blr || is_first_parsed_line {
+                call_tree_events.push(CallTreeEvent::LineAddr {
+                    seq: i,
+                    addr: insn_addr_for_ct,
+                });
+                is_first_parsed_line = false;
+            }
         }
+
+        // Reset prev_was_blr before setting it for current instruction
+        prev_was_blr = false;
 
         match class {
             InsnClass::BranchLink => {
@@ -604,6 +617,7 @@ pub fn scan_chunk(
                 if format == TraceFormat::Gumtrace {
                     gumtrace_annot_events.push(GumtraceAnnotEvent::BranchInstr { seq: i });
                 }
+                prev_was_blr = true; // Next line needs LineAddr for BLR pending detection
             }
             InsnClass::BranchReg => {
                 if format == TraceFormat::Gumtrace {
