@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { REG_RE, SHIFT_RE, IMM_RE, BRACKET_RE, TOKEN_RE } from "../utils/arm64Tokens";
+import { highlightText } from "../utils/highlightText";
 
 function tokenColor(token: string, isFirst: boolean): string | undefined {
   if (isFirst) return "var(--asm-mnemonic)";
@@ -14,9 +15,11 @@ interface Props {
   text: string;
   onRegClick?: (regName: string) => void;
   activeReg?: string | null;
+  highlightQuery?: string;
+  caseSensitive?: boolean;
 }
 
-function DisasmHighlight({ text, onRegClick, activeReg }: Props) {
+function DisasmHighlight({ text, onRegClick, activeReg, highlightQuery, caseSensitive }: Props) {
   if (!text) return null;
 
   const parts: { text: string; color?: string; isReg: boolean }[] = [];
@@ -59,13 +62,13 @@ function DisasmHighlight({ text, onRegClick, activeReg }: Props) {
                 if (!isActive) (e.currentTarget as HTMLElement).style.textDecoration = "none";
               }}
             >
-              {p.text}
+              {highlightQuery ? highlightText(p.text, highlightQuery, caseSensitive ?? false) : p.text}
             </span>
           );
         }
         return p.color
-          ? <span key={i} style={{ color: p.color }}>{p.text}</span>
-          : <span key={i}>{p.text}</span>;
+          ? <span key={i} style={{ color: p.color }}>{highlightQuery ? highlightText(p.text, highlightQuery, caseSensitive ?? false) : p.text}</span>
+          : <span key={i}>{highlightQuery ? highlightText(p.text, highlightQuery, caseSensitive ?? false) : p.text}</span>;
       })}
     </>
   );

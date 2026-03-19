@@ -7,6 +7,7 @@ import Minimap, { MINIMAP_WIDTH } from "./Minimap";
 import { useSelectedSeq } from "../stores/selectedSeqStore";
 import CustomScrollbar from "./CustomScrollbar";
 import { useResizableColumn } from "../hooks/useResizableColumn";
+import { highlightText } from "../utils/highlightText";
 
 const BASE_ROW_HEIGHT = 22;
 const DETAIL_LINE_HEIGHT = 16;
@@ -63,6 +64,8 @@ interface SearchResultListProps {
   selectedSeq?: number | null;
   onJumpToSeq: (seq: number) => void;
   onJumpToMatch?: (match: SearchMatch) => void;
+  searchQuery?: string;
+  caseSensitive?: boolean;
 }
 
 export default function SearchResultList({
@@ -70,6 +73,8 @@ export default function SearchResultList({
   selectedSeq: selectedSeqProp,
   onJumpToSeq,
   onJumpToMatch,
+  searchQuery,
+  caseSensitive,
 }: SearchResultListProps) {
   const rwCol = useResizableColumn(30, "right", 20, "search:rw");
   const seqCol = useResizableColumn(90, "right", 50, "search:seq");
@@ -191,6 +196,11 @@ export default function SearchResultList({
     return results.filter(r => seqSet.has(r.seq)) as unknown as TraceLine[];
   }, [results]);
 
+  const hl = useCallback((text: string | null | undefined) => {
+    if (!text || !searchQuery) return text ?? "";
+    return highlightText(text, searchQuery, caseSensitive ?? false);
+  }, [searchQuery, caseSensitive]);
+
   const visibleRows = Math.max(1, Math.ceil(containerHeight / BASE_ROW_HEIGHT));
   const maxRow = Math.max(0, results.length - visibleRows);
   const virtualItems = virtualizer.getVirtualItems();
@@ -278,15 +288,15 @@ export default function SearchResultList({
                   }}>
                     <span style={{ width: 48, flexShrink: 0 }}></span>
                     <span style={{ width: rwCol.width, flexShrink: 0, color: "var(--text-secondary)" }}>
-                      {match.mem_rw === "W" ? "W" : match.mem_rw === "R" ? "R" : ""}
+                      {hl(match.mem_rw === "W" ? "W" : match.mem_rw === "R" ? "R" : "")}
                     </span>
                     <span style={{ width: 8, flexShrink: 0 }} />
                     <span style={{ width: seqCol.width, flexShrink: 0, color: "var(--text-secondary)" }}>{match.seq + 1}</span>
                     <span style={{ width: 8, flexShrink: 0 }} />
-                    <span style={{ width: addrCol.width, flexShrink: 0, color: "var(--text-address)" }}>{match.address}</span>
+                    <span style={{ width: addrCol.width, flexShrink: 0, color: "var(--text-address)" }}>{hl(match.address)}</span>
                     <span style={{ width: 8, flexShrink: 0 }} />
                     <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      <DisasmHighlight text={match.disasm} />
+                      <DisasmHighlight text={match.disasm} highlightQuery={searchQuery} caseSensitive={caseSensitive} />
                       {match.call_info && (
                         <span
                           style={{
@@ -296,9 +306,9 @@ export default function SearchResultList({
                           }}
                           title={match.call_info.tooltip}
                         >
-                          {match.call_info.summary.length > 80
+                          {hl(match.call_info.summary.length > 80
                             ? match.call_info.summary.slice(0, 80) + "..."
-                            : match.call_info.summary}
+                            : match.call_info.summary)}
                         </span>
                       )}
                     </span>
@@ -312,7 +322,7 @@ export default function SearchResultList({
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {match.changes}
+                      {hl(match.changes)}
                     </span>
                   </div>
 
@@ -334,7 +344,7 @@ export default function SearchResultList({
                         overflowY: "hidden",
                         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
                       }}>
-                        {match.hidden_content}
+                        {hl(match.hidden_content)}
                       </div>
                     </div>
                   )}
