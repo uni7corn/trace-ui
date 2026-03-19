@@ -4,6 +4,7 @@ export interface SearchOptions {
   caseSensitive: boolean;
   wholeWord: boolean;
   useRegex: boolean;
+  fuzzyMatch: boolean;
 }
 
 interface SearchBarProps {
@@ -87,7 +88,7 @@ export default function SearchBar({
   inputRef: externalRef, initialOptions, onOptionsChange,
 }: SearchBarProps) {
   const [options, setOptions] = useState<SearchOptions>(
-    initialOptions ?? { caseSensitive: false, wholeWord: false, useRegex: false }
+    initialOptions ?? { caseSensitive: false, wholeWord: false, useRegex: false, fuzzyMatch: false }
   );
   const internalRef = useRef<HTMLInputElement>(null);
   const ref = externalRef || internalRef;
@@ -171,6 +172,13 @@ export default function SearchBar({
             title="Use Regular Expression"
           >
             <span style={{ fontSize: 12 }}>.*</span>
+          </ToggleButton>
+          <ToggleButton
+            active={options.fuzzyMatch}
+            onClick={() => toggle("fuzzyMatch")}
+            title="Fuzzy Match (split by spaces)"
+          >
+            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: -0.5 }}>F</span>
           </ToggleButton>
         </div>
       </div>

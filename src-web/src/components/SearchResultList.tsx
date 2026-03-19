@@ -66,6 +66,7 @@ interface SearchResultListProps {
   onJumpToMatch?: (match: SearchMatch) => void;
   searchQuery?: string;
   caseSensitive?: boolean;
+  fuzzy?: boolean;
 }
 
 export default function SearchResultList({
@@ -75,6 +76,7 @@ export default function SearchResultList({
   onJumpToMatch,
   searchQuery,
   caseSensitive,
+  fuzzy,
 }: SearchResultListProps) {
   const rwCol = useResizableColumn(30, "right", 20, "search:rw");
   const seqCol = useResizableColumn(90, "right", 50, "search:seq");
@@ -198,8 +200,8 @@ export default function SearchResultList({
 
   const hl = useCallback((text: string | null | undefined) => {
     if (!text || !searchQuery) return text ?? "";
-    return highlightText(text, searchQuery, caseSensitive ?? false);
-  }, [searchQuery, caseSensitive]);
+    return highlightText(text, searchQuery, caseSensitive ?? false, fuzzy ?? false);
+  }, [searchQuery, caseSensitive, fuzzy]);
 
   const visibleRows = Math.max(1, Math.ceil(containerHeight / BASE_ROW_HEIGHT));
   const maxRow = Math.max(0, results.length - visibleRows);
@@ -296,7 +298,7 @@ export default function SearchResultList({
                     <span style={{ width: addrCol.width, flexShrink: 0, color: "var(--text-address)" }}>{hl(match.address)}</span>
                     <span style={{ width: 8, flexShrink: 0 }} />
                     <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      <DisasmHighlight text={match.disasm} highlightQuery={searchQuery} caseSensitive={caseSensitive} />
+                      <DisasmHighlight text={match.disasm} highlightQuery={searchQuery} caseSensitive={caseSensitive} fuzzy={fuzzy} />
                       {match.call_info && (
                         <span
                           style={{

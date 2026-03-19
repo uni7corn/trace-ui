@@ -301,6 +301,7 @@ export function useTraceStore(skipStrings: boolean = false) {
     query: string,
     caseSensitive: boolean = false,
     useRegex: boolean = false,
+    fuzzy: boolean = false,
   ): Promise<number> => {
     const sid = activeSessionIdRef.current;
     if (!sid || !query.trim()) {
@@ -315,7 +316,7 @@ export function useTraceStore(skipStrings: boolean = false) {
     try {
       const result = await invoke<SearchResult>("search_trace", {
         sessionId: sid,
-        request: { query, max_results: 10000, case_sensitive: caseSensitive, use_regex: useRegex },
+        request: { query, max_results: 10000, case_sensitive: caseSensitive, use_regex: useRegex, fuzzy },
       });
       setSearchResults(result.matches);
       setSearchTotalMatches(result.total_matches);

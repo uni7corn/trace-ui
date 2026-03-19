@@ -28,7 +28,8 @@ function highlightNonSpaces(matched: string, keyStart: number): React.ReactNode[
 
 /**
  * 将文本中匹配 query 的子串高亮（字体颜色变黄）。
- * 含空格的 query 作为整体匹配，但空格本身不高亮。
+ * fuzzy=false（默认）：含空格的 query 作为整体匹配，空格本身不高亮。
+ * fuzzy=true：按空格拆分为多个关键词，每个独立高亮。
  * 支持普通文本和 /regex/ 模式。
  * 无匹配时返回原始字符串。
  */
@@ -36,6 +37,7 @@ export function highlightText(
   text: string,
   query: string,
   caseSensitive: boolean = false,
+  fuzzy: boolean = false,
 ): React.ReactNode {
   if (!text || !query) return text;
 
@@ -46,6 +48,12 @@ export function highlightText(
       // /regex/ 模式
       const pattern = query.slice(1, -1);
       regex = new RegExp(pattern, caseSensitive ? "g" : "gi");
+    } else if (fuzzy && query.includes(" ")) {
+      // 模糊匹配：空格分隔多关键词，每个独立高亮
+      const tokens = query.split(/\s+/).filter(Boolean);
+      if (tokens.length === 0) return text;
+      const escaped = tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+      regex = new RegExp(`(${escaped.join("|")})`, caseSensitive ? "g" : "gi");
     } else {
       // 普通文本匹配（含空格时作为整体匹配）
       const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

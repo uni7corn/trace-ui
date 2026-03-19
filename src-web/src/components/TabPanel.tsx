@@ -95,7 +95,7 @@ export default function TabPanel({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
   const [selectedSearchIdx, setSelectedSearchIdx] = useState(0);
-  const [searchOptions, setSearchOptions] = useState<SearchOptions>({ caseSensitive: false, wholeWord: false, useRegex: false });
+  const [searchOptions, setSearchOptions] = useState<SearchOptions>({ caseSensitive: false, wholeWord: false, useRegex: false, fuzzyMatch: false });
 
   // 同步外部 searchQuery 变化
   useEffect(() => { setLocalSearchQuery(searchQuery); }, [searchQuery]);
@@ -252,6 +252,7 @@ export default function TabPanel({
               onJumpToMatch={onJumpToSearchMatch}
               searchQuery={searchQuery}
               caseSensitive={searchOptions.caseSensitive}
+              fuzzy={searchOptions.fuzzyMatch}
             />
             {searchStatus && (
               <div style={{

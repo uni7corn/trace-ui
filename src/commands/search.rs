@@ -12,6 +12,8 @@ pub struct SearchRequest {
     pub case_sensitive: bool,
     #[serde(default)]
     pub use_regex: bool,
+    #[serde(default)]
+    pub fuzzy: bool,
 }
 
 fn default_max_results() -> u32 {
@@ -45,7 +47,7 @@ enum SearchMode {
     Regex(regex::bytes::Regex),
 }
 
-fn parse_search_mode(query: &str, case_sensitive: bool, use_regex: bool) -> Result<SearchMode, String> {
+fn parse_search_mode(query: &str, case_sensitive: bool, use_regex: bool, fuzzy: bool) -> Result<SearchMode, String> {
     if query.starts_with('/') && query.ends_with('/') && query.len() > 2 {
         let pattern = &query[1..query.len() - 1];
         let re = regex::bytes::Regex::new(pattern)
@@ -59,7 +61,8 @@ fn parse_search_mode(query: &str, case_sensitive: bool, use_regex: bool) -> Resu
         Ok(SearchMode::Regex(re))
     } else if case_sensitive {
         Ok(SearchMode::TextSensitive(query.as_bytes().to_vec()))
-    } else {
+    } else if fuzzy {
+        // 模糊匹配：按空格拆分为多个 token，每个独立匹配
         let tokens: Vec<Vec<u8>> = query.split_whitespace()
             .map(|t| t.to_lowercase().into_bytes())
             .collect();
@@ -68,6 +71,9 @@ fn parse_search_mode(query: &str, case_sensitive: bool, use_regex: bool) -> Resu
         } else {
             Ok(SearchMode::TextInsensitive(query.to_lowercase().into_bytes()))
         }
+    } else {
+        // 默认：整体子串匹配（含空格）
+        Ok(SearchMode::TextInsensitive(query.to_lowercase().into_bytes()))
     }
 }
 
@@ -258,7 +264,7 @@ pub async fn search_trace(
         });
     }
 
-    let mode = parse_search_mode(&request.query, request.case_sensitive, request.use_regex)?;
+    let mode = parse_search_mode(&request.query, request.case_sensitive, request.use_regex, request.fuzzy)?;
     let max_results = request.max_results;
 
     // 确定并行分块数

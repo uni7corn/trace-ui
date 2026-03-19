@@ -549,7 +549,7 @@ function App() {
         finalQuery = `\\b${escaped}\\b`;
         finalUseRegex = true;
       }
-      const count = await searchTrace(finalQuery, options?.caseSensitive ?? false, finalUseRegex);
+      const count = await searchTrace(finalQuery, options?.caseSensitive ?? false, finalUseRegex, options?.fuzzyMatch ?? false);
       if (query.trim() && count === 0) {
         showToast(`No results found for "${query}"`, { type: "info" });
       }

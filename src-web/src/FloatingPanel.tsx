@@ -110,6 +110,7 @@ export default function FloatingPanel({ panel }: { panel: string }) {
           max_results: 10000,
           case_sensitive: options?.caseSensitive ?? false,
           use_regex: finalUseRegex,
+          fuzzy: options?.fuzzyMatch ?? false,
         },
       });
       setSearchResults(result.matches);
@@ -246,12 +247,14 @@ function FloatingSearchContent({
   const [localQuery, setLocalQuery] = useState(searchQuery);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const currentOptionsRef = useRef<SearchOptions>({ caseSensitive: false, wholeWord: false, useRegex: false });
+  const currentOptionsRef = useRef<SearchOptions>({ caseSensitive: false, wholeWord: false, useRegex: false, fuzzyMatch: false });
   const [caseSensitiveState, setCaseSensitiveState] = useState(false);
+  const [fuzzyState, setFuzzyState] = useState(false);
 
   const handleOptionsChange = useCallback((opts: SearchOptions) => {
     currentOptionsRef.current = opts;
     setCaseSensitiveState(opts.caseSensitive);
+    setFuzzyState(opts.fuzzyMatch);
   }, []);
 
   useEffect(() => {
@@ -331,6 +334,7 @@ function FloatingSearchContent({
             onJumpToMatch={onJumpToMatch}
             searchQuery={searchQuery}
             caseSensitive={caseSensitiveState}
+            fuzzy={fuzzyState}
           />
         </div>
       )}
