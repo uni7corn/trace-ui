@@ -108,8 +108,21 @@ export default function SearchResultList({
     const idx = seqToIndex.get(selectedSeq);
     if (idx != null) {
       setSelectedIdx(idx);
+      // 自动滚动到选中项可见位置
+      const container = parentRef.current;
+      if (container && rowOffsets[idx] !== undefined) {
+        const rowTop = rowOffsets[idx];
+        const rowHeight = getRowHeight(results[idx]);
+        const scrollTop = container.scrollTop;
+        const viewHeight = container.clientHeight;
+        if (rowTop < scrollTop) {
+          container.scrollTop = rowTop;
+        } else if (rowTop + rowHeight > scrollTop + viewHeight) {
+          container.scrollTop = rowTop + rowHeight - viewHeight;
+        }
+      }
     }
-  }, [selectedSeq, seqToIndex]);
+  }, [selectedSeq, seqToIndex, rowOffsets, results]);
 
   const virtualizer = useVirtualizerNoSync({
     count: results.length,
