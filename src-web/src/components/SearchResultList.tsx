@@ -7,7 +7,7 @@ import Minimap, { MINIMAP_WIDTH } from "./Minimap";
 import { useSelectedSeq } from "../stores/selectedSeqStore";
 import CustomScrollbar from "./CustomScrollbar";
 import { useResizableColumn } from "../hooks/useResizableColumn";
-import { highlightText } from "../utils/highlightText";
+import { highlightText, highlightHexdump } from "../utils/highlightText";
 
 const BASE_ROW_HEIGHT = 22;
 const DETAIL_LINE_HEIGHT = 16;
@@ -346,7 +346,9 @@ export default function SearchResultList({
                         overflowY: "hidden",
                         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
                       }}>
-                        {hl(match.hidden_content)}
+                        {match.hidden_content
+                          ? highlightHexdump(match.hidden_content, searchQuery ?? "", caseSensitive ?? false, fuzzy ?? false)
+                          : ""}
                       </div>
                     </div>
                   )}
