@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useDragToFloat } from "../hooks/useDragToFloat";
 import type { SearchMatch, SliceResult } from "../types/trace";
 import MemoryPanel from "./MemoryPanel";
 import SearchResultList from "./SearchResultList";
+import SearchBar, { SearchOptions } from "./SearchBar";
 import StringsPanel from "./StringsPanel";
 
 const TABS = ["Memory", "Accesses", "Taint State", "Search", "Strings"] as const;
@@ -36,6 +37,7 @@ interface Props {
   sliceDuration: number | null;
   sliceError: string | null;
   stringsScanning?: boolean;
+  onSearch: (query: string, options: SearchOptions) => void;
 }
 
 export default function TabPanel({
@@ -45,6 +47,7 @@ export default function TabPanel({
   sliceActive, sliceInfo, sliceFromSpecs,
   isSlicing, sliceDuration, sliceError,
   stringsScanning,
+  onSearch,
 }: Props) {
   const [active, setActive] = useState<TabName>("Memory");
   const [memResetKey, setMemResetKey] = useState(0);
@@ -88,6 +91,72 @@ export default function TabPanel({
   }, [floatedPanels, active, visibleTabs]);
 
   const searchBadge = searchTotalMatches > 0 ? ` (${searchTotalMatches.toLocaleString()})` : "";
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
+  const [selectedSearchIdx, setSelectedSearchIdx] = useState(0);
+  const [searchOptions, setSearchOptions] = useState<SearchOptions>({ caseSensitive: false, wholeWord: false, useRegex: false });
+
+  // 同步外部 searchQuery 变化
+  useEffect(() => { setLocalSearchQuery(searchQuery); }, [searchQuery]);
+
+  // 监听浮窗 ESC 还原时同步的 query 和 toggle 状态
+  useEffect(() => {
+    const unlistenQuery = listen<{ query: string }>("sync:search-query-back", (e) => {
+      setLocalSearchQuery(e.payload.query);
+    });
+    const unlistenOptions = listen<SearchOptions>("sync:search-options", (e) => {
+      setSearchOptions(e.payload);
+    });
+    return () => {
+      unlistenQuery.then(fn => fn());
+      unlistenOptions.then(fn => fn());
+    };
+  }, []);
+
+  // 搜索结果变化时重置选中索引
+  useEffect(() => { setSelectedSearchIdx(0); }, [searchResults]);
+
+  // 监听 action:activate-search-tab 事件
+  useEffect(() => {
+    const unlisten = listen("action:activate-search-tab", () => {
+      if (!floatedPanels.has("search")) {
+        setActive("Search");
+      }
+    });
+    return () => { unlisten.then(fn => fn()); };
+  }, [floatedPanels]);
+
+  // 监听 search:focus-input 事件（Ctrl+F 时聚焦搜索框）
+  useEffect(() => {
+    const unlisten = listen("search:focus-input", () => {
+      if (!floatedPanels.has("search")) {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    });
+    return () => { unlisten.then(fn => fn()); };
+  }, [floatedPanels]);
+
+  const handlePrevMatch = useCallback(() => {
+    if (searchResults.length === 0) return;
+    setSelectedSearchIdx(prev =>
+      (prev - 1 + searchResults.length) % searchResults.length
+    );
+  }, [searchResults.length]);
+
+  const handleNextMatch = useCallback(() => {
+    if (searchResults.length === 0) return;
+    setSelectedSearchIdx(prev =>
+      (prev + 1) % searchResults.length
+    );
+  }, [searchResults.length]);
+
+  const searchMatchInfo = isSearching
+    ? "Searching..."
+    : searchResults.length === 0
+      ? (searchQuery ? "No results" : "")
+      : `${selectedSearchIdx + 1}/${searchTotalMatches.toLocaleString()}`;
 
   // ── 拖拽浮出逻辑 ──
   const handleFloatPanel = useCallback((panel: string, pos: { x: number; y: number }) => {
@@ -153,18 +222,32 @@ export default function TabPanel({
       </div>
 
       <div style={tabStyle("Search")}>
+        <SearchBar
+          query={localSearchQuery}
+          onQueryChange={setLocalSearchQuery}
+          onSearch={onSearch}
+          onPrevMatch={handlePrevMatch}
+          onNextMatch={handleNextMatch}
+          matchInfo={searchMatchInfo}
+          inputRef={searchInputRef}
+          initialOptions={searchOptions}
+          onOptionsChange={setSearchOptions}
+        />
         {isSearching ? (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>Searching...</span>
           </div>
         ) : searchResults.length === 0 ? (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>{searchQuery ? `No results found for "${searchQuery}"` : ""}</span>
+            <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>
+              {searchQuery ? `No results found for "${searchQuery}"` : "Enter search query and press Enter"}
+            </span>
           </div>
         ) : (
           <>
             <SearchResultList
               results={searchResults}
+              selectedSeq={searchResults[selectedSearchIdx]?.seq ?? null}
               onJumpToSeq={onJumpToSeq}
               onJumpToMatch={onJumpToSearchMatch}
             />
