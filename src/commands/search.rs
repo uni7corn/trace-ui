@@ -8,6 +8,10 @@ pub struct SearchRequest {
     pub query: String,
     #[serde(default = "default_max_results")]
     pub max_results: u32,
+    #[serde(default)]
+    pub case_sensitive: bool,
+    #[serde(default)]
+    pub use_regex: bool,
 }
 
 fn default_max_results() -> u32 {
@@ -34,28 +38,27 @@ pub struct SearchResult {
 }
 
 enum SearchMode {
-    /// 单个关键词子串匹配（不区分大小写）
-    Text(Vec<u8>),
-    /// 多个关键词模糊匹配（空格分隔，全部命中才算匹配，不区分大小写）
-    FuzzyText(Vec<Vec<u8>>),
+    TextInsensitive(Vec<u8>),
+    TextSensitive(Vec<u8>),
     Regex(regex::bytes::Regex),
 }
 
-fn parse_search_mode(query: &str) -> Result<SearchMode, String> {
+fn parse_search_mode(query: &str, case_sensitive: bool, use_regex: bool) -> Result<SearchMode, String> {
     if query.starts_with('/') && query.ends_with('/') && query.len() > 2 {
         let pattern = &query[1..query.len() - 1];
         let re = regex::bytes::Regex::new(pattern)
             .map_err(|e| format!("正则表达式错误: {}", e))?;
+        return Ok(SearchMode::Regex(re));
+    }
+    if use_regex {
+        let pattern = if case_sensitive { query.to_string() } else { format!("(?i){}", query) };
+        let re = regex::bytes::Regex::new(&pattern)
+            .map_err(|e| format!("正则表达式错误: {}", e))?;
         Ok(SearchMode::Regex(re))
+    } else if case_sensitive {
+        Ok(SearchMode::TextSensitive(query.as_bytes().to_vec()))
     } else {
-        let tokens: Vec<Vec<u8>> = query.split_whitespace()
-            .map(|s| s.to_lowercase().into_bytes())
-            .collect();
-        if tokens.len() > 1 {
-            Ok(SearchMode::FuzzyText(tokens))
-        } else {
-            Ok(SearchMode::Text(query.to_lowercase().into_bytes()))
-        }
+        Ok(SearchMode::TextInsensitive(query.to_lowercase().into_bytes()))
     }
 }
 
@@ -73,32 +76,29 @@ fn ascii_contains(haystack: &[u8], needle: &[u8]) -> bool {
     })
 }
 
-/// 零分配多关键词模糊匹配
 #[inline]
-fn ascii_fuzzy_match(haystack: &[u8], tokens: &[Vec<u8>]) -> bool {
-    tokens.iter().all(|t| ascii_contains(haystack, t))
+fn ascii_contains_sensitive(haystack: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() { return true; }
+    if needle.len() > haystack.len() { return false; }
+    haystack.windows(needle.len()).any(|window| window == needle)
 }
 
 /// 对一行执行匹配（支持原始行 + call_search_text 双重匹配）
 #[inline]
 fn matches_line(mode: &SearchMode, line: &[u8], call_text: Option<&[u8]>) -> bool {
     let line_match = match mode {
-        SearchMode::Text(needle) => ascii_contains(line, needle),
-        SearchMode::FuzzyText(tokens) => ascii_fuzzy_match(line, tokens),
+        SearchMode::TextInsensitive(needle) => ascii_contains(line, needle),
+        SearchMode::TextSensitive(needle) => ascii_contains_sensitive(line, needle),
         SearchMode::Regex(re) => re.is_match(line),
     };
-    if line_match {
-        return true;
-    }
+    if line_match { return true; }
     if let Some(text) = call_text {
         match mode {
-            SearchMode::Text(needle) => ascii_contains(text, needle),
-            SearchMode::FuzzyText(tokens) => ascii_fuzzy_match(text, tokens),
+            SearchMode::TextInsensitive(needle) => ascii_contains(text, needle),
+            SearchMode::TextSensitive(needle) => ascii_contains_sensitive(text, needle),
             SearchMode::Regex(re) => re.is_match(text),
         }
-    } else {
-        false
-    }
+    } else { false }
 }
 
 /// 搜索一个分块，返回 (匹配列表, 总匹配数)
@@ -189,8 +189,8 @@ fn search_chunk(
 
 fn matches_mode_bytes(mode: &SearchMode, text: &[u8]) -> bool {
     match mode {
-        SearchMode::Text(needle) => ascii_contains(text, needle),
-        SearchMode::FuzzyText(tokens) => ascii_fuzzy_match(text, tokens),
+        SearchMode::TextInsensitive(needle) => ascii_contains(text, needle),
+        SearchMode::TextSensitive(needle) => ascii_contains_sensitive(text, needle),
         SearchMode::Regex(re) => re.is_match(text),
     }
 }
@@ -240,7 +240,7 @@ pub async fn search_trace(
         });
     }
 
-    let mode = parse_search_mode(&request.query)?;
+    let mode = parse_search_mode(&request.query, request.case_sensitive, request.use_regex)?;
     let max_results = request.max_results;
 
     // 确定并行分块数
