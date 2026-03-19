@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { StringRecordDto, StringXRef } from "../types/trace";
+import { useResizableColumn } from "../hooks/useResizableColumn";
 
 interface XRefsData {
   record: StringRecordDto;
@@ -11,6 +12,15 @@ interface XRefsData {
 export default function StringXRefsPanel() {
   const [data, setData] = useState<XRefsData | null>(null);
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
+
+  const seqCol = useResizableColumn(70, "right", 40, "xrefs:seq");
+  const rwCol = useResizableColumn(30, "right", 20, "xrefs:rw");
+  const addrCol = useResizableColumn(110, "right", 50, "xrefs:addr");
+
+  const HANDLE_STYLE: React.CSSProperties = {
+    width: 8, cursor: "col-resize", flexShrink: 0,
+    display: "flex", alignItems: "center", justifyContent: "center",
+  };
 
   // 先注册数据监听，再发送 ready 信号，确保不会丢失事件
   useEffect(() => {
@@ -70,9 +80,12 @@ export default function StringXRefsPanel() {
         fontSize: 11, color: "var(--text-secondary)", flexShrink: 0,
         fontFamily: "var(--font-mono)",
       }}>
-        <span style={{ width: 70, flexShrink: 0 }}>Seq</span>
-        <span style={{ width: 30, flexShrink: 0 }}>R/W</span>
-        <span style={{ width: 110, flexShrink: 0 }}>Address</span>
+        <span style={{ width: seqCol.width, flexShrink: 0 }}>Seq</span>
+        <div onMouseDown={seqCol.onMouseDown} style={HANDLE_STYLE} />
+        <span style={{ width: rwCol.width, flexShrink: 0 }}>R/W</span>
+        <div onMouseDown={rwCol.onMouseDown} style={HANDLE_STYLE} />
+        <span style={{ width: addrCol.width, flexShrink: 0 }}>Address</span>
+        <div onMouseDown={addrCol.onMouseDown} style={HANDLE_STYLE} />
         <span style={{ flex: 1 }}>Disasm</span>
       </div>
 
@@ -94,9 +107,12 @@ export default function StringXRefsPanel() {
               onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "var(--bg-hover)"; }}
               onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = isSelected ? "var(--bg-selected)" : i % 2 === 0 ? "var(--bg-row-even)" : "var(--bg-row-odd)"; }}
             >
-              <span style={{ width: 70, flexShrink: 0, color: "var(--syntax-number)" }}>{xref.seq + 1}</span>
-              <span style={{ width: 30, flexShrink: 0, color: xref.rw === "R" ? "var(--syntax-keyword)" : "var(--syntax-literal)" }}>{xref.rw}</span>
-              <span style={{ width: 110, flexShrink: 0, color: "var(--text-secondary)" }}>{xref.insn_addr}</span>
+              <span style={{ width: seqCol.width, flexShrink: 0, color: "var(--syntax-number)" }}>{xref.seq + 1}</span>
+              <span style={{ width: 8, flexShrink: 0 }} />
+              <span style={{ width: rwCol.width, flexShrink: 0, color: xref.rw === "R" ? "var(--syntax-keyword)" : "var(--syntax-literal)" }}>{xref.rw}</span>
+              <span style={{ width: 8, flexShrink: 0 }} />
+              <span style={{ width: addrCol.width, flexShrink: 0, color: "var(--text-secondary)" }}>{xref.insn_addr}</span>
+              <span style={{ width: 8, flexShrink: 0 }} />
               <span style={{ flex: 1, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{xref.disasm}</span>
             </div>
           );
