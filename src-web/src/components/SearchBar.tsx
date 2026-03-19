@@ -7,6 +7,9 @@ export interface SearchOptions {
   fuzzyMatch: boolean;
 }
 
+const HISTORY_KEY = "search-panel-history";
+const MAX_HISTORY = 20;
+
 interface SearchBarProps {
   query: string;
   onQueryChange: (q: string) => void;
@@ -93,6 +96,52 @@ export default function SearchBar({
   const internalRef = useRef<HTMLInputElement>(null);
   const ref = externalRef || internalRef;
 
+  // ── 搜索历史 ──
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); } catch { return []; }
+  });
+  const [showHistory, setShowHistory] = useState(false);
+  const searchWrapperRef = useRef<HTMLDivElement>(null);
+
+  const addToHistory = useCallback((q: string) => {
+    if (!q.trim()) return;
+    setSearchHistory(prev => {
+      const next = [q.trim(), ...prev.filter(h => h !== q.trim())].slice(0, MAX_HISTORY);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const removeHistoryItem = useCallback((item: string) => {
+    setSearchHistory(prev => {
+      const next = prev.filter(h => h !== item);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const clearAllHistory = useCallback(() => {
+    setSearchHistory([]);
+    localStorage.removeItem(HISTORY_KEY);
+    setShowHistory(false);
+  }, []);
+
+  // 点击外部关闭历史面板
+  useEffect(() => {
+    if (!showHistory) return;
+    const handler = (e: MouseEvent) => {
+      if (searchWrapperRef.current && !searchWrapperRef.current.contains(e.target as Node)) {
+        setShowHistory(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showHistory]);
+
+  const filteredHistory = query.trim()
+    ? searchHistory.filter(h => h !== query.trim() && h.toLowerCase().includes(query.toLowerCase()))
+    : searchHistory;
+
   // 同步外部 initialOptions 变化（ESC 还原时）
   useEffect(() => {
     if (initialOptions) {
@@ -114,11 +163,15 @@ export default function SearchBar({
       if (e.shiftKey) {
         onPrevMatch();
       } else {
+        addToHistory(query);
+        setShowHistory(false);
         onSearch(query, options);
         onNextMatch();
       }
+    } else if (e.key === "Escape") {
+      setShowHistory(false);
     }
-  }, [query, options, onSearch, onPrevMatch, onNextMatch]);
+  }, [query, options, onSearch, onPrevMatch, onNextMatch, addToHistory]);
 
   return (
     <div style={{
@@ -126,61 +179,110 @@ export default function SearchBar({
       borderBottom: "1px solid var(--border-color)", flexShrink: 0,
       alignItems: "center",
     }}>
-      {/* 搜索输入框 + 内嵌 toggle */}
-      <div style={{
-        flex: 1, display: "flex", alignItems: "center",
-        background: "var(--bg-input)", border: "1px solid var(--border-color)",
-        borderRadius: 3, overflow: "hidden",
+      {/* 搜索输入框 + 内嵌 toggle + 历史下拉 */}
+      <div ref={searchWrapperRef} style={{
+        flex: 1, position: "relative",
       }}>
-        <input
-          ref={ref}
-          type="text"
-          placeholder="Search text or /regex/"
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          style={{
-            flex: 1, padding: "3px 8px",
-            background: "transparent", color: "var(--text-primary)",
-            border: "none", outline: "none",
-            fontFamily: "var(--font-mono)", fontSize: "var(--font-size-sm)",
-            minWidth: 0,
-          }}
-        />
-        <div style={{ display: "flex", gap: 1, paddingRight: 4, flexShrink: 0 }}>
-          <ToggleButton
-            active={options.caseSensitive}
-            onClick={() => toggle("caseSensitive")}
-            title="Match Case"
-          >
-            <span style={{ fontSize: 13, fontFamily: "serif", fontWeight: 600 }}>Aa</span>
-          </ToggleButton>
-          <ToggleButton
-            active={options.wholeWord}
-            onClick={() => toggle("wholeWord")}
-            title="Match Whole Word"
-          >
-            <span style={{
-              fontSize: 10, fontWeight: 700,
-              border: "1.2px solid currentColor", borderRadius: 2,
-              padding: "0 2px", lineHeight: "14px",
-            }}>ab</span>
-          </ToggleButton>
-          <ToggleButton
-            active={options.useRegex}
-            onClick={() => toggle("useRegex")}
-            title="Use Regular Expression"
-          >
-            <span style={{ fontSize: 12 }}>.*</span>
-          </ToggleButton>
-          <ToggleButton
-            active={options.fuzzyMatch}
-            onClick={() => toggle("fuzzyMatch")}
-            title="Fuzzy Match (split by spaces)"
-          >
-            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: -0.5 }}>F</span>
-          </ToggleButton>
+        <div style={{
+          display: "flex", alignItems: "center",
+          background: "var(--bg-input)", border: "1px solid var(--border-color)",
+          borderRadius: 3, overflow: "hidden",
+        }}>
+          <input
+            ref={ref}
+            type="text"
+            placeholder="Search text or /regex/"
+            value={query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={() => setShowHistory(true)}
+            style={{
+              flex: 1, padding: "3px 8px",
+              background: "transparent", color: "var(--text-primary)",
+              border: "none", outline: "none",
+              fontFamily: "var(--font-mono)", fontSize: "var(--font-size-sm)",
+              minWidth: 0,
+            }}
+          />
+          <div style={{ display: "flex", gap: 1, paddingRight: 4, flexShrink: 0 }}>
+            <ToggleButton
+              active={options.caseSensitive}
+              onClick={() => toggle("caseSensitive")}
+              title="Match Case"
+            >
+              <span style={{ fontSize: 13, fontFamily: "serif", fontWeight: 600 }}>Aa</span>
+            </ToggleButton>
+            <ToggleButton
+              active={options.wholeWord}
+              onClick={() => toggle("wholeWord")}
+              title="Match Whole Word"
+            >
+              <span style={{
+                fontSize: 10, fontWeight: 700,
+                border: "1.2px solid currentColor", borderRadius: 2,
+                padding: "0 2px", lineHeight: "14px",
+              }}>ab</span>
+            </ToggleButton>
+            <ToggleButton
+              active={options.useRegex}
+              onClick={() => toggle("useRegex")}
+              title="Use Regular Expression"
+            >
+              <span style={{ fontSize: 12 }}>.*</span>
+            </ToggleButton>
+            <ToggleButton
+              active={options.fuzzyMatch}
+              onClick={() => toggle("fuzzyMatch")}
+              title="Fuzzy Match (split by spaces)"
+            >
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: -0.5 }}>F</span>
+            </ToggleButton>
+          </div>
         </div>
+
+        {/* 搜索历史下拉面板 */}
+        {showHistory && filteredHistory.length > 0 && (
+          <div style={{
+            position: "absolute", top: "100%", left: 0, width: "100%", marginTop: 2,
+            background: "var(--bg-dialog)", border: "1px solid var(--border-color)",
+            borderRadius: 4, zIndex: 100, maxHeight: 200, overflowY: "auto",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+          }}>
+            {filteredHistory.map(item => (
+              <div
+                key={item}
+                style={{
+                  display: "flex", alignItems: "center", padding: "4px 8px", fontSize: 12,
+                  cursor: "pointer", color: "var(--text-primary)",
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-selected)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                onClick={() => { onQueryChange(item); setShowHistory(false); }}
+              >
+                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: "var(--font-size-sm)" }}>{item}</span>
+                <span
+                  onClick={e => { e.stopPropagation(); removeHistoryItem(item); }}
+                  style={{
+                    marginLeft: 4, color: "var(--text-secondary)", fontSize: 13, lineHeight: 1,
+                    width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center",
+                    borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.color = "var(--text-primary)")}
+                  onMouseLeave={e => (e.currentTarget.style.color = "var(--text-secondary)")}
+                >×</span>
+              </div>
+            ))}
+            <div
+              style={{
+                padding: "4px 8px", fontSize: 11, color: "var(--text-secondary)",
+                borderTop: "1px solid var(--border-color)", cursor: "pointer", textAlign: "center",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-selected)"; e.currentTarget.style.color = "var(--text-primary)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-secondary)"; }}
+              onClick={clearAllHistory}
+            >Clear All</div>
+          </div>
+        )}
       </div>
 
       {/* matchInfo 显示 */}
