@@ -28,9 +28,6 @@ fn main() {
         .setup(|app| {
             let _window = app.get_webview_window("main").unwrap();
 
-            #[cfg(debug_assertions)]
-            _window.open_devtools();
-
             // Windows 不支持 titleBarStyle: "Overlay"，需要手动关闭原生装饰
             #[cfg(target_os = "windows")]
             let _ = _window.set_decorations(false);

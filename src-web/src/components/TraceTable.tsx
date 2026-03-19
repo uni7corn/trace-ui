@@ -62,12 +62,13 @@ function canvasTokenColor(token: string, isFirst: boolean): string {
 function lineToTextColumns(
   seq: number,
   line: TraceLine | undefined,
-): { memRW: string; seqText: string; addr: string; disasm: string; changes: string } {
+): { memRW: string; seqText: string; addr: string; disasm: string; regBefore: string; changes: string } {
   return {
     memRW: line?.mem_rw === "W" || line?.mem_rw === "R" ? line.mem_rw : "",
     seqText: String(seq + 1),
     addr: line?.address ?? "",
     disasm: line?.disasm ?? "",
+    regBefore: line?.reg_before ?? "",
     changes: line?.changes ?? "",
   };
 }
@@ -181,9 +182,10 @@ export default function TraceTable({
     sliceStatusCacheRef.current = new Map();
   }
 
-  const changesCol = useResizableColumn(Math.min(300, Math.round(window.innerWidth * 0.2)));
   const seqCol = useResizableColumn(DEFAULT_SEQ_WIDTH, "right", 50);
   const addrCol = useResizableColumn(DEFAULT_ADDR_WIDTH, "right", 50);
+  const disasmCol = useResizableColumn(320, "right", 200);
+  const regBeforeCol = useResizableColumn(420, "right", 40);
 
   // 动态列位置（每个拖动手柄占 8px）
   const HANDLE_W = 8;
@@ -537,10 +539,14 @@ export default function TraceTable({
     setDebouncedRow(maxRow);
   }
 
-  // Disasm 列最小保留宽度，防止 changes 列挤压
-  const MIN_DISASM_WIDTH = 200;
-  const maxChangesWidth = Math.max(60, canvasSize.width - COL_DISASM - MIN_DISASM_WIDTH - RIGHT_GUTTER);
-  const effectiveChangesWidth = Math.min(changesCol.width, maxChangesWidth);
+  // 推式布局：所有列从左到右排列，Changes 吸收剩余宽度
+  const MIN_CHANGES_WIDTH = 60;
+  const maxLeftCols = Math.max(0, canvasSize.width - COL_DISASM - 2 * HANDLE_W - RIGHT_GUTTER - MIN_CHANGES_WIDTH);
+  const effectiveDisasmWidth = Math.max(200, Math.min(disasmCol.width, maxLeftCols - 40));
+  const effectiveBeforeWidth = Math.max(40, Math.min(regBeforeCol.width, maxLeftCols - effectiveDisasmWidth));
+  const colRegBefore = COL_DISASM + effectiveDisasmWidth + HANDLE_W;
+  const colChanges = colRegBefore + effectiveBeforeWidth + HANDLE_W;
+  const effectiveChangesWidth = Math.max(MIN_CHANGES_WIDTH, canvasSize.width - colChanges - RIGHT_GUTTER);
 
   const hasRestoredScroll = useRef(false);
   const isInternalClick = useRef(false);
@@ -961,7 +967,6 @@ export default function TraceTable({
       if (x >= COL_MEMRW && vi < finalVirtualTotalRows) {
         // 检查是否点击了寄存器 hitbox
         let hitReg = false;
-        const colChanges = canvasSize.width - effectiveChangesWidth - RIGHT_GUTTER;
         if (x >= COL_DISASM && x < colChanges) {
           for (const hb of hitboxesRef.current) {
             if (hb.rowIndex === rowIdx && x >= hb.x && x <= hb.x + hb.width) {
@@ -988,7 +993,7 @@ export default function TraceTable({
         }
       }
     }
-  }, [finalVirtualTotalRows, canvasSize.width, effectiveChangesWidth]);
+  }, [finalVirtualTotalRows, canvasSize.width, effectiveChangesWidth, effectiveDisasmWidth, effectiveBeforeWidth]);
 
   // === call_info 独立窗口 ===
   const openCallInfoWindow = useCallback(async (text: string, isJni: boolean, mouseX: number, mouseY: number) => {
@@ -1075,7 +1080,6 @@ export default function TraceTable({
 
     // 4. Disasm 列寄存器点击
     if (x >= COL_DISASM && sessionId) {
-      const colChanges = canvasSize.width - effectiveChangesWidth - 12;
       if (x < colChanges) {
         for (const hb of hitboxesRef.current) {
           if (hb.rowIndex === rowIdx && x >= hb.x && x <= hb.x + hb.width) {
@@ -1126,7 +1130,7 @@ export default function TraceTable({
     setCtrlSelect(prev => prev.size > 0 ? new Set() : prev);
     shiftAnchorVi.current = vi;
   }, [finalVirtualTotalRows, finalResolveVirtualIndex, finalSeqToVirtualIndex, animatedToggleFold, blLineMap,
-      isFolded, sessionId, canvasSize, effectiveChangesWidth, handleRegClick,
+      isFolded, sessionId, canvasSize, effectiveChangesWidth, effectiveDisasmWidth, effectiveBeforeWidth, handleRegClick,
       handleArrowJump, onSelectSeq, onUnhideGroup, selectedSeq, openCallInfoWindow, visibleLines]);
 
   const handleOverlayMouseUp = useCallback((e: React.MouseEvent) => {
@@ -1333,8 +1337,7 @@ export default function TraceTable({
                 const firstLine = isMultiLine ? hlInfo.comment.split("\n")[0] + " …" : hlInfo.comment;
                 const commentLabel = "; " + firstLine;
                 const commentW = ctx2.measureText(commentLabel).width;
-                const colChanges = canvasSize.width - effectiveChangesWidth - RIGHT_GUTTER;
-                const clippedW = Math.min(commentW, colChanges - COL_COMMENT);
+                const clippedW = Math.min(commentW, colRegBefore - COL_COMMENT);
                 if (x <= COL_COMMENT + clippedW) {
                   const container = containerRef.current;
                   if (container) {
@@ -1406,7 +1409,7 @@ export default function TraceTable({
     }
 
     if (textOverlayRef.current) textOverlayRef.current.style.cursor = "text";
-  }, [finalVirtualTotalRows, finalResolveVirtualIndex, blLineMap, isFolded, highlights, commentTooltip, callInfoTooltip, commentEditor, visibleLines, canvasSize, effectiveChangesWidth]);
+  }, [finalVirtualTotalRows, finalResolveVirtualIndex, blLineMap, isFolded, highlights, commentTooltip, callInfoTooltip, commentEditor, visibleLines, canvasSize, effectiveChangesWidth, effectiveDisasmWidth, effectiveBeforeWidth]);
 
   // 获取当前选中的 seq 列表（多选或单选）
   const getSelectedSeqs = useCallback((): number[] => {
@@ -1449,7 +1452,7 @@ export default function TraceTable({
     if (format === "raw") {
       text = lines.map(l => l.raw).join("\n");
     } else if (format === "tab") {
-      text = lines.map(l => `${l.seq + 1}\t${l.address}\t${l.disasm}\t${l.changes}`).join("\n");
+      text = lines.map(l => `${l.seq + 1}\t${l.address}\t${l.disasm}\t${l.reg_before}\t${l.changes}`).join("\n");
     } else {
       text = lines.map(l => l.disasm).join("\n");
     }
@@ -1673,7 +1676,6 @@ export default function TraceTable({
     const renderStartRow = Math.floor(scrollPosRef.current);
     const subPxOffset = -(scrollPosRef.current - renderStartRow) * ROW_HEIGHT;
 
-    const colChanges = W - effectiveChangesWidth - RIGHT_GUTTER;
     const hitboxes: TokenHitbox[] = [];
     const useSeqsSet = arrowState ? new Set(arrowState.useSeqs) : null;
 
@@ -1964,7 +1966,7 @@ export default function TraceTable({
           ctx.font = FONT_ITALIC;
           ctx.fillStyle = ci.is_jni ? COLORS.callInfoJni : COLORS.callInfoNormal;
           const ciText = ci.summary.length > 80 ? ci.summary.slice(0, 80) + "..." : ci.summary;
-          const maxCiChars = Math.floor((canvasSize.width - ciX - RIGHT_GUTTER) / charW);
+          const maxCiChars = Math.floor((colRegBefore - ciX) / charW);
           const displayText = ciText.length > maxCiChars && maxCiChars > 1
             ? ciText.slice(0, maxCiChars - 1) + "\u2026"
             : ciText;
@@ -1985,12 +1987,24 @@ export default function TraceTable({
         const firstLine = isMultiLine ? hlInfo.comment.split("\n")[0] + " …" : hlInfo.comment;
         const commentLabel = "; " + firstLine;
         const commentX = COL_COMMENT;
-        // 裁剪到 changes 列之前
+        // 裁剪到 before 列之前
         ctx.save();
         ctx.beginPath();
-        ctx.rect(commentX, y, colChanges - commentX, ROW_HEIGHT);
+        ctx.rect(commentX, y, colRegBefore - commentX, ROW_HEIGHT);
         ctx.clip();
         ctx.fillText(commentLabel, commentX, textY);
+        ctx.restore();
+      }
+
+      // Before（裁剪到列宽，位于 Disasm 和 Changes 之间）
+      if (line?.reg_before) {
+        ctx.font = FONT;
+        ctx.fillStyle = COLORS.textSecondary;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(colRegBefore, y, effectiveBeforeWidth, ROW_HEIGHT);
+        ctx.clip();
+        ctx.fillText(line.reg_before, colRegBefore, textY);
         ctx.restore();
       }
 
@@ -2260,7 +2274,7 @@ export default function TraceTable({
 
     ctx.restore();
   }, [canvasSize, visibleRows, finalVirtualTotalRows, finalResolveVirtualIndex,
-      visibleLines, selectedSeq, arrowState, effectiveChangesWidth, fontReady,
+      visibleLines, selectedSeq, arrowState, effectiveChangesWidth, effectiveDisasmWidth, effectiveBeforeWidth, fontReady,
       blLineMap, isFolded, finalSeqToVirtualIndex, toggleFold, multiSelect, ctrlSelect, highlights,
       sliceActive, sliceStatuses, sliceSourceSeq, taintFilterActive,
       COL_ADDR, COL_DISASM, _themeId]);
@@ -2276,9 +2290,8 @@ export default function TraceTable({
     // 清空旧内容
     overlay.textContent = "";
 
-    // CSS Grid 列模板：与 Canvas 列位置精确对齐
-    // 末尾 12px 为滚动条预留空间，与 Canvas 的 colChanges = W - effectiveChangesWidth - 12 对齐
-    const gridCols = `${COL_FOLD}px ${COL_MEMRW - COL_FOLD}px ${COL_SEQ - COL_MEMRW}px ${COL_ADDR - COL_SEQ}px ${COL_DISASM - COL_ADDR}px 1fr ${effectiveChangesWidth}px`;
+    // CSS Grid 列模板：与 Canvas 列位置精确对齐（推式布局，Changes 为 1fr 吸收剩余宽度）
+    const gridCols = `${COL_FOLD}px ${COL_MEMRW - COL_FOLD}px ${COL_SEQ - COL_MEMRW}px ${COL_ADDR - COL_SEQ}px ${COL_DISASM - COL_ADDR}px ${effectiveDisasmWidth}px ${HANDLE_W}px ${effectiveBeforeWidth}px ${HANDLE_W}px ${effectiveChangesWidth}px`;
 
     for (let i = 0; i < visibleRows + 1; i++) {
       const vi = debouncedRow + i;
@@ -2306,17 +2319,18 @@ export default function TraceTable({
       if (resolved.type === "summary") {
         const memSpan = document.createElement("span");
         rowDiv.appendChild(memSpan);
-
         const seqSpan = document.createElement("span");
         rowDiv.appendChild(seqSpan);
-
         const addrSpan = document.createElement("span");
         rowDiv.appendChild(addrSpan);
 
         const disasmSpan = document.createElement("span");
         disasmSpan.textContent = `Func ${resolved.funcAddr} (${resolved.lineCount.toLocaleString()} lines)`;
         rowDiv.appendChild(disasmSpan);
-
+        rowDiv.appendChild(document.createElement("span")); // handle Disasm|Before
+        const regBeforeSpan = document.createElement("span");
+        rowDiv.appendChild(regBeforeSpan);
+        rowDiv.appendChild(document.createElement("span")); // handle Before|Changes
         const changesSpan = document.createElement("span");
         rowDiv.appendChild(changesSpan);
       } else if (resolved.type === "hidden-summary") {
@@ -2330,6 +2344,10 @@ export default function TraceTable({
         const disasmSpan = document.createElement("span");
         disasmSpan.textContent = `Hidden (${resolved.count} lines)`;
         rowDiv.appendChild(disasmSpan);
+        rowDiv.appendChild(document.createElement("span")); // handle Disasm|Before
+        const regBeforeSpan = document.createElement("span");
+        rowDiv.appendChild(regBeforeSpan);
+        rowDiv.appendChild(document.createElement("span")); // handle Before|Changes
         const changesSpan = document.createElement("span");
         rowDiv.appendChild(changesSpan);
       } else {
@@ -2351,6 +2369,13 @@ export default function TraceTable({
         disasmSpan.style.overflow = "hidden";
         disasmSpan.textContent = cols.disasm;
         rowDiv.appendChild(disasmSpan);
+        rowDiv.appendChild(document.createElement("span")); // handle
+
+        const regBeforeSpan = document.createElement("span");
+        regBeforeSpan.style.overflow = "hidden";
+        regBeforeSpan.textContent = cols.regBefore;
+        rowDiv.appendChild(regBeforeSpan);
+        rowDiv.appendChild(document.createElement("span")); // handle Before|Changes
 
         const changesSpan = document.createElement("span");
         changesSpan.style.overflow = "hidden";
@@ -2360,11 +2385,11 @@ export default function TraceTable({
 
       overlay.appendChild(rowDiv);
     }
-  }, [debouncedRow, visibleRows, finalVirtualTotalRows, finalResolveVirtualIndex, visibleLines, canvasSize.width, effectiveChangesWidth]);
+  }, [debouncedRow, visibleRows, finalVirtualTotalRows, finalResolveVirtualIndex, visibleLines, canvasSize.width, effectiveChangesWidth, effectiveDisasmWidth, effectiveBeforeWidth, COL_DISASM]);
 
   // === 脏标记（useLayoutEffect 确保在 paint 前同步设置，配合 RAF 实现同帧渲染） ===
   useLayoutEffect(() => { dirtyRef.current = true; }, [
-    currentRow, selectedSeq, arrowState, canvasSize, effectiveChangesWidth,
+    currentRow, selectedSeq, arrowState, canvasSize, effectiveChangesWidth, effectiveDisasmWidth, effectiveBeforeWidth,
     visibleLines, finalVirtualTotalRows, fontReady, highlights, ctrlSelect,
     sliceActive, sliceStatuses, sliceSourceSeq,
   ]);
@@ -2401,7 +2426,7 @@ export default function TraceTable({
           background: "var(--bg-primary)",
         }}
       >
-        <TableHeader changesWidth={effectiveChangesWidth} seqWidth={seqCol.width} addrWidth={addrCol.width} onResizeMouseDown={changesCol.onMouseDown} onSeqResizeMouseDown={seqCol.onMouseDown} onAddrResizeMouseDown={addrCol.onMouseDown} />
+        <TableHeader disasmWidth={effectiveDisasmWidth} regBeforeWidth={effectiveBeforeWidth} seqWidth={seqCol.width} addrWidth={addrCol.width} onDisasmResizeMouseDown={disasmCol.onMouseDown} onRegBeforeResizeMouseDown={regBeforeCol.onMouseDown} onSeqResizeMouseDown={seqCol.onMouseDown} onAddrResizeMouseDown={addrCol.onMouseDown} />
         <div
           style={{
             flex: 1,
@@ -2420,7 +2445,7 @@ export default function TraceTable({
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg-primary)" }}>
-      <TableHeader changesWidth={effectiveChangesWidth} seqWidth={seqCol.width} addrWidth={addrCol.width} onResizeMouseDown={changesCol.onMouseDown} onSeqResizeMouseDown={seqCol.onMouseDown} onAddrResizeMouseDown={addrCol.onMouseDown} />
+      <TableHeader disasmWidth={effectiveDisasmWidth} regBeforeWidth={effectiveBeforeWidth} seqWidth={seqCol.width} addrWidth={addrCol.width} onDisasmResizeMouseDown={disasmCol.onMouseDown} onRegBeforeResizeMouseDown={regBeforeCol.onMouseDown} onSeqResizeMouseDown={seqCol.onMouseDown} onAddrResizeMouseDown={addrCol.onMouseDown} />
       <div
         ref={containerRef}
         tabIndex={0}
@@ -2854,10 +2879,12 @@ export default function TraceTable({
 }
 
 interface TableHeaderProps {
-  changesWidth: number;
+  disasmWidth: number;
+  regBeforeWidth: number;
   seqWidth: number;
   addrWidth: number;
-  onResizeMouseDown: (e: React.MouseEvent) => void;
+  onDisasmResizeMouseDown: (e: React.MouseEvent) => void;
+  onRegBeforeResizeMouseDown: (e: React.MouseEvent) => void;
   onSeqResizeMouseDown: (e: React.MouseEvent) => void;
   onAddrResizeMouseDown: (e: React.MouseEvent) => void;
 }
@@ -2876,7 +2903,7 @@ function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => v
   );
 }
 
-function TableHeader({ changesWidth, seqWidth, addrWidth, onResizeMouseDown, onSeqResizeMouseDown, onAddrResizeMouseDown }: TableHeaderProps) {
+function TableHeader({ disasmWidth, regBeforeWidth, seqWidth, addrWidth, onDisasmResizeMouseDown, onRegBeforeResizeMouseDown, onSeqResizeMouseDown, onAddrResizeMouseDown }: TableHeaderProps) {
   return (
     <div
       style={{
@@ -2891,13 +2918,15 @@ function TableHeader({ changesWidth, seqWidth, addrWidth, onResizeMouseDown, onS
       <span style={{ width: COL_FOLD - COL_ARROW, flexShrink: 0 }}></span>
       <span style={{ width: COL_MEMRW - COL_FOLD, flexShrink: 0 }}></span>
       <span style={{ width: COL_SEQ - COL_MEMRW, flexShrink: 0 }}></span>
-      <span style={{ width: seqWidth, flexShrink: 0 }}>#</span>
+      <span style={{ width: seqWidth, flexShrink: 0 }}>Seq</span>
       <ResizeHandle onMouseDown={onSeqResizeMouseDown} />
       <span style={{ width: addrWidth, flexShrink: 0 }}>Address</span>
       <ResizeHandle onMouseDown={onAddrResizeMouseDown} />
-      <span style={{ flex: 1 }}>Disassembly</span>
-      <ResizeHandle onMouseDown={onResizeMouseDown} />
-      <span style={{ width: changesWidth, flexShrink: 0 }}>Changes</span>
+      <span style={{ width: disasmWidth, flexShrink: 0 }}>Disassembly</span>
+      <ResizeHandle onMouseDown={onDisasmResizeMouseDown} />
+      <span style={{ width: regBeforeWidth, flexShrink: 0 }}>Before</span>
+      <ResizeHandle onMouseDown={onRegBeforeResizeMouseDown} />
+      <span style={{ flex: 1 }}>Changes</span>
       <span style={{ width: RIGHT_GUTTER, flexShrink: 0 }}></span>
     </div>
   );

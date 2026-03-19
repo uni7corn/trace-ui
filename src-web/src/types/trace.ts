@@ -11,6 +11,7 @@ export interface TraceLine {
   so_offset: string;
   disasm: string;
   changes: string;
+  reg_before: string;
   mem_rw: string | null;
   mem_addr: string | null;
   mem_size: number | null;

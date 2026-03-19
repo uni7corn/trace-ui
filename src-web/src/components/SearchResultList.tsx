@@ -17,6 +17,7 @@ const DETAIL_VERTICAL_PADDING = 6;
 const DETAIL_BORDER = 1;
 const DETAIL_INDENT = 48 + 30 + 90 + 90;
 const DETAIL_LEFT_PADDING = 8 + DETAIL_INDENT;
+const DETAIL_MAX_LINES = 16; // hexdump 16 行 = 256 字节
 
 function getDetailLineCount(text: string | null | undefined): number {
   if (!text) return 0;
@@ -26,12 +27,13 @@ function getDetailLineCount(text: string | null | undefined): number {
 function getRowHeight(match: SearchMatch | undefined): number {
   const lineCount = getDetailLineCount(match?.hidden_content);
   if (lineCount === 0) return BASE_ROW_HEIGHT;
+  const cappedLines = Math.min(lineCount, DETAIL_MAX_LINES);
   return BASE_ROW_HEIGHT
     + DETAIL_TOP_MARGIN
     + DETAIL_BOTTOM_GAP
     + DETAIL_VERTICAL_PADDING * 2
     + DETAIL_BORDER * 2
-    + lineCount * DETAIL_LINE_HEIGHT;
+    + cappedLines * DETAIL_LINE_HEIGHT;
 }
 
 function buildRowOffsets(results: SearchMatch[]): number[] {
@@ -223,7 +225,7 @@ export default function SearchResultList({
         <span style={{ width: 48, flexShrink: 0 }}></span>
         <span style={{ width: rwCol.width, flexShrink: 0 }}>R/W</span>
         <div onMouseDown={rwCol.onMouseDown} style={HANDLE_STYLE}><div style={{ width: 1, height: "100%", background: "var(--border-color)" }} /></div>
-        <span style={{ width: seqCol.width, flexShrink: 0 }}>#</span>
+        <span style={{ width: seqCol.width, flexShrink: 0 }}>Seq</span>
         <div onMouseDown={seqCol.onMouseDown} style={HANDLE_STYLE}><div style={{ width: 1, height: "100%", background: "var(--border-color)" }} /></div>
         <span style={{ width: addrCol.width, flexShrink: 0 }}>Address</span>
         <div onMouseDown={addrCol.onMouseDown} style={HANDLE_STYLE}><div style={{ width: 1, height: "100%", background: "var(--border-color)" }} /></div>
@@ -250,7 +252,7 @@ export default function SearchResultList({
             {virtualItems.map((vRow) => {
               const match = results[vRow.index];
               if (!match) return null;
-              const isSelected = selectedIdx === vRow.index || selectedSeq === match.seq;
+              const isSelected = selectedIdx === vRow.index;
               const baseBg = isSelected
                 ? "var(--bg-selected)"
                 : vRow.index % 2 === 0 ? "var(--bg-row-even)" : "var(--bg-row-odd)";
@@ -332,7 +334,7 @@ export default function SearchResultList({
 
                   {match.hidden_content && (
                     <div style={{
-                      padding: `${DETAIL_TOP_MARGIN}px 8px ${DETAIL_BOTTOM_GAP}px ${DETAIL_LEFT_PADDING}px`,
+                      padding: `${DETAIL_TOP_MARGIN}px 8px ${DETAIL_BOTTOM_GAP}px ${8 + 48 + rwCol.width + 8 + seqCol.width + 8 + addrCol.width + 8}px`,
                     }}>
                       <div style={{
                         border: "1px solid rgba(255,255,255,0.08)",
@@ -345,7 +347,8 @@ export default function SearchResultList({
                         lineHeight: `${DETAIL_LINE_HEIGHT}px`,
                         whiteSpace: "pre",
                         overflowX: "auto",
-                        overflowY: "hidden",
+                        overflowY: "auto",
+                        maxHeight: DETAIL_MAX_LINES * DETAIL_LINE_HEIGHT + DETAIL_VERTICAL_PADDING * 2,
                         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
                       }}>
                         {match.hidden_content

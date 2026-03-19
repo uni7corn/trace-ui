@@ -302,8 +302,10 @@ export function useTraceStore(skipStrings: boolean = false) {
     caseSensitive: boolean = false,
     useRegex: boolean = false,
     fuzzy: boolean = false,
+    displayQuery?: string,
   ): Promise<number> => {
     const sid = activeSessionIdRef.current;
+    const origQuery = displayQuery ?? query;
     if (!sid || !query.trim()) {
       setSearchResults([]);
       setSearchQuery("");
@@ -311,7 +313,7 @@ export function useTraceStore(skipStrings: boolean = false) {
       return 0;
     }
     setIsSearching(true);
-    setSearchQuery(query);
+    setSearchQuery(origQuery);
     setSearchStatus("Searching...");
     try {
       const result = await invoke<SearchResult>("search_trace", {
@@ -321,7 +323,7 @@ export function useTraceStore(skipStrings: boolean = false) {
       setSearchResults(result.matches);
       setSearchTotalMatches(result.total_matches);
       setSearchStatus(result.total_matches === 0
-        ? `No results found for "${query}"`
+        ? `No results found for "${origQuery}"`
         : `${result.total_matches.toLocaleString()} results`);
       return result.total_matches;
     } catch (e) {

@@ -115,7 +115,7 @@ export default function TabPanel({
   }, []);
 
   // 搜索结果变化时重置选中索引
-  useEffect(() => { setSelectedSearchIdx(0); }, [searchResults]);
+  useEffect(() => { setSelectedSearchIdx(-1); }, [searchResults]);
 
   // 监听 action:activate-search-tab 事件
   useEffect(() => {
@@ -141,7 +141,7 @@ export default function TabPanel({
   const handlePrevMatch = useCallback(() => {
     if (searchResults.length === 0) return;
     setSelectedSearchIdx(prev =>
-      (prev - 1 + searchResults.length) % searchResults.length
+      prev <= 0 ? searchResults.length - 1 : prev - 1
     );
   }, [searchResults.length]);
 
@@ -156,7 +156,9 @@ export default function TabPanel({
     ? "Searching..."
     : searchResults.length === 0
       ? (searchQuery ? "No results" : "")
-      : `${selectedSearchIdx + 1}/${searchTotalMatches.toLocaleString()}`;
+      : selectedSearchIdx < 0
+        ? `${searchTotalMatches.toLocaleString()} results`
+        : `${selectedSearchIdx + 1}/${searchTotalMatches.toLocaleString()}`;
 
   // ── 拖拽浮出逻辑 ──
   const handleFloatPanel = useCallback((panel: string, pos: { x: number; y: number }) => {

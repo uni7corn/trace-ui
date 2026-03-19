@@ -659,7 +659,7 @@ export default function MemoryPanel({ selectedSeq: selectedSeqProp, isPhase2Read
                             width: 20, flexShrink: 0, textAlign: "center",
                             color: rec.rw === "W" ? "var(--text-hex-highlight)" : "var(--text-address)",
                           }}>{rec.rw}</span>
-                          <span style={{ width: 100, color: "var(--text-ascii-printable)", flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{rec.data}</span>
+                          <span style={{ width: 280, color: "var(--text-ascii-printable)", flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{rec.data}</span>
                           <span style={{ flex: 1, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis" }}>{rec.disasm}</span>
                         </div>
                       );

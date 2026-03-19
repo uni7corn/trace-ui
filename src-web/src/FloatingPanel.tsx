@@ -245,7 +245,7 @@ function FloatingSearchContent({
   onSearch: (query: string, options: SearchOptions) => void;
 }) {
   const [localQuery, setLocalQuery] = useState(searchQuery);
-  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [selectedIdx, setSelectedIdx] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const currentOptionsRef = useRef<SearchOptions>({ caseSensitive: false, wholeWord: false, useRegex: false, fuzzyMatch: false });
   const [caseSensitiveState, setCaseSensitiveState] = useState(false);
@@ -287,11 +287,11 @@ function FloatingSearchContent({
   }, [localQuery]);
 
   useEffect(() => { setLocalQuery(searchQuery); }, [searchQuery]);
-  useEffect(() => { setSelectedIdx(0); }, [searchResults]);
+  useEffect(() => { setSelectedIdx(-1); }, [searchResults]);
 
   const handlePrevMatch = useCallback(() => {
     if (searchResults.length === 0) return;
-    setSelectedIdx(prev => (prev - 1 + searchResults.length) % searchResults.length);
+    setSelectedIdx(prev => prev <= 0 ? searchResults.length - 1 : prev - 1);
   }, [searchResults.length]);
 
   const handleNextMatch = useCallback(() => {
@@ -303,7 +303,9 @@ function FloatingSearchContent({
     ? "Searching..."
     : searchResults.length === 0
       ? (searchQuery ? "No results" : "")
-      : `${selectedIdx + 1}/${searchTotalMatches.toLocaleString()}`;
+      : selectedIdx < 0
+        ? `${searchTotalMatches.toLocaleString()} results`
+        : `${selectedIdx + 1}/${searchTotalMatches.toLocaleString()}`;
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>

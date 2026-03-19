@@ -17,6 +17,7 @@ pub struct TraceLine {
     pub so_offset: String,
     pub disasm: String,
     pub changes: String,
+    pub reg_before: String,
     pub mem_rw: Option<String>,
     pub mem_addr: Option<String>,  // 内存访问绝对地址 "0xbffff6b0"
     pub mem_size: Option<u8>,      // 内存访问字节宽度 (1/2/4/8/16)
@@ -35,6 +36,7 @@ pub fn parse_trace_line(seq: u32, raw: &[u8]) -> Option<TraceLine> {
     let mem_addr = extract_mem_addr(line);
     let mem_size = extract_mem_size(&disasm);
     let changes = extract_changes(line);
+    let reg_before = extract_reg_before(line, &changes);
 
     Some(TraceLine {
         seq,
@@ -42,6 +44,7 @@ pub fn parse_trace_line(seq: u32, raw: &[u8]) -> Option<TraceLine> {
         so_offset,
         disasm,
         changes,
+        reg_before,
         mem_rw,
         mem_addr,
         mem_size,
@@ -109,12 +112,24 @@ pub fn parse_trace_line_gumtrace(seq: u32, raw: &[u8]) -> Option<TraceLine> {
         String::new()
     };
 
+    // Pre-changes: before " -> "，显示全部寄存器旧值
+    let reg_before = if let Some(pos) = annot_area.find(" -> ") {
+        let before = annot_area[..pos].trim();
+        before.split_whitespace()
+            .filter(|tok| !tok.starts_with("mem_w=") && !tok.starts_with("mem_r="))
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        String::new()
+    };
+
     Some(TraceLine {
         seq,
         address: address.to_string(),
         so_offset: so_offset.to_string(),
         disasm,
         changes,
+        reg_before,
         mem_rw,
         mem_addr,
         mem_size,
@@ -285,6 +300,37 @@ fn extract_changes(line: &str) -> String {
     }
 }
 
+/// 提取 unidbg 格式的 reg_before（=> 之前全部寄存器旧值）
+fn extract_reg_before(line: &str, _changes: &str) -> String {
+    let arrow_pos = match line.find(" => ") {
+        Some(pos) => pos,
+        None => return String::new(),
+    };
+
+    // 找到反汇编结束的引号位置
+    let start = if let Some(q1) = line.find('"') {
+        if let Some(q2) = line[q1 + 1..].find('"') {
+            q1 + 1 + q2 + 1 // 第二个引号之后
+        } else {
+            return String::new();
+        }
+    } else {
+        return String::new();
+    };
+
+    let between = line[start..arrow_pos].trim();
+    // 过滤掉 "; "、"mem[WRITE]"、"mem[READ]"、"abs=0xHEX" token，返回全部寄存器值
+    between.split_whitespace()
+        .filter(|tok| {
+            *tok != ";" &&
+            *tok != "mem[WRITE]" &&
+            *tok != "mem[READ]" &&
+            !tok.starts_with("abs=0x")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[tauri::command]
 pub fn get_lines(session_id: String, seqs: Vec<u32>, state: State<'_, AppState>) -> Result<Vec<TraceLine>, String> {
     let sessions = state
@@ -323,6 +369,7 @@ pub fn get_lines(session_id: String, seqs: Vec<u32>, state: State<'_, AppState>)
             so_offset: String::new(),
             disasm: format!("(line {} unparseable)", seq + 1),
             changes: String::new(),
+            reg_before: String::new(),
             mem_rw: None,
             mem_addr: None,
             mem_size: None,
@@ -356,6 +403,7 @@ mod tests {
         assert_eq!(result.mem_addr, Some("0xbffff6b0".to_string()));
         assert_eq!(result.mem_size, Some(16)); // stp x29, x30 = pair of 8-byte regs
         assert_eq!(result.changes, "x29=0x0 x30=0x7ffff0000 sp=0xbffff6b0");
+        assert_eq!(result.reg_before, "x29=0x0 x30=0x7ffff0000 sp=0xbffff710");
     }
 
     #[test]
@@ -368,6 +416,7 @@ mod tests {
         assert_eq!(result.mem_rw, None);
         assert_eq!(result.mem_addr, None);
         assert_eq!(result.changes, "x8=0x12345");
+        assert_eq!(result.reg_before, "x0=0x12345"); // 显示全部 before 寄存器
     }
 
     #[test]
@@ -376,6 +425,7 @@ mod tests {
         let result = parse_trace_line(0, raw).unwrap();
         assert_eq!(result.disasm, "nop");
         assert_eq!(result.changes, "");
+        assert_eq!(result.reg_before, "");
         assert_eq!(result.mem_rw, None);
         assert_eq!(result.mem_addr, None);
     }
